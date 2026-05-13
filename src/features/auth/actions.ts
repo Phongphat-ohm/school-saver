@@ -1,7 +1,6 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { defaultPaymentMethods } from "@/constants/payment-methods";
 import { prisma } from "@/lib/prisma";
 import { createSession, destroySession, getSession } from "@/lib/session";
 import { hashPassword, verifyPassword } from "@/lib/password";
@@ -24,17 +23,16 @@ export async function loginAction(username: string, password: string) {
       },
     });
 
-    if (!user || user.status !== "ACTIVE") return errorResult("username หรือ password ไม่ถูกต้อง");
+    if (!user || user.status !== "ACTIVE") return errorResult("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
     const validPassword = await verifyPassword(parsed.data.password, user.passwordHash);
-    if (!validPassword) return errorResult("username หรือ password ไม่ถูกต้อง");
+    if (!validPassword) return errorResult("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
 
-    const membership = user.workspaceMemberships[0];
-    if (!membership) return errorResult("ผู้ใช้นี้ยังไม่มี workspace ที่ใช้งานได้");
-    await createSession(user.id, membership.workspaceId);
+    const membership = user.workspaceMemberships[0] ?? null;
+    await createSession(user.id, membership?.workspaceId ?? null);
 
     return successResult({
       user: { id: user.id, username: user.username, fullName: user.fullName },
-      currentWorkspace: membership.workspace,
+      currentWorkspace: membership?.workspace ?? null,
     });
   } catch {
     return errorResult("ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่");
@@ -46,48 +44,22 @@ export async function registerAction(data: unknown) {
     const parsed = registerSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลสมัครสมาชิกไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const exists = await prisma.user.findUnique({ where: { username: parsed.data.username } });
-    if (exists) return errorResult("username นี้มีผู้ใช้งานแล้ว");
+    if (exists) return errorResult("ชื่อผู้ใช้นี้มีผู้ใช้งานแล้ว");
 
-    const result = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          username: parsed.data.username,
-          passwordHash: await hashPassword(parsed.data.password),
-          fullName: parsed.data.fullName,
-          status: "ACTIVE",
-        },
-      });
-      const workspace = await tx.workspace.create({
-        data: {
-          name: parsed.data.workspaceName,
-          description: parsed.data.workspaceDescription,
-          ownerId: user.id,
-        },
-      });
-      await tx.workspaceMember.create({
-        data: {
-          workspaceId: workspace.id,
-          userId: user.id,
-          role: "OWNER",
-          status: "ACTIVE",
-        },
-      });
-      await tx.paymentMethod.createMany({
-        data: defaultPaymentMethods.map((method) => ({
-          workspaceId: workspace.id,
-          name: method.name,
-          type: method.type,
-          status: "ACTIVE" as const,
-        })),
-      });
-      return { user, workspace };
+    const user = await prisma.user.create({
+      data: {
+        username: parsed.data.username,
+        passwordHash: await hashPassword(parsed.data.password),
+        fullName: parsed.data.fullName,
+        status: "ACTIVE",
+      },
     });
 
-    await createSession(result.user.id, result.workspace.id);
+    await createSession(user.id, null);
     return successResult(
       {
-        user: { id: result.user.id, username: result.user.username, fullName: result.user.fullName },
-        currentWorkspace: result.workspace,
+        user: { id: user.id, username: user.username, fullName: user.fullName },
+        currentWorkspace: null,
       },
       "สมัครสมาชิกสำเร็จ",
     );

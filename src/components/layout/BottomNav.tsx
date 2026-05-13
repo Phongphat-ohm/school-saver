@@ -14,7 +14,11 @@ const items: Array<{ label: string; href: string; icon: typeof Home; allowedRole
 
 export async function BottomNav() {
   const role = await getCurrentWorkspaceRole();
-  const visibleItems = items.filter((item) => role && item.allowedRoles.includes(role));
+  const visibleItems = role
+    ? items.filter((item) => item.allowedRoles.includes(role))
+    : [
+        { label: "Workspace", href: routes.workspaces, icon: Menu, allowedRoles: [] },
+      ];
 
   return (
     <nav

@@ -5,6 +5,10 @@ import { WorkspaceCard } from "@/features/workspace/components/WorkspaceCard";
 import { WorkspaceForm } from "@/features/workspace/components/WorkspaceForm";
 import { WorkspaceInviteForm } from "@/features/workspace/components/WorkspaceInviteForm";
 import { SentWorkspaceInvitationList, WorkspaceInvitationList } from "@/features/workspace/components/WorkspaceInvitationList";
+import { WorkspaceJoinQr } from "@/features/workspace/components/WorkspaceJoinQr";
+import { WorkspaceJoinRequestButton } from "@/features/workspace/components/WorkspaceJoinRequestButton";
+import { WorkspaceJoinRequestList } from "@/features/workspace/components/WorkspaceJoinRequestList";
+import { WorkspaceQrScanner } from "@/features/workspace/components/WorkspaceQrScanner";
 import { WorkspaceMemberList } from "@/features/workspace/components/WorkspaceMemberList";
 import { WorkspaceSettingsForm } from "@/features/settings/components/WorkspaceSettingsForm";
 import {
@@ -12,22 +16,39 @@ import {
   getMyWorkspacesAction,
   getPendingWorkspaceInvitationsAction,
   getSentWorkspaceInvitationsAction,
+  getWorkspaceByIdForJoinAction,
+  getWorkspaceJoinRequestsAction,
   getWorkspaceMembersAction,
 } from "@/features/workspace/actions";
 
-export default async function WorkspacesPage() {
-  const [workspacesResult, membersResult, currentWorkspaceResult, pendingInvitationsResult, sentInvitationsResult] = await Promise.all([
+export default async function WorkspacesPage({ searchParams }: { searchParams: Promise<{ join?: string }> }) {
+  const { join } = await searchParams;
+  const [
+    workspacesResult,
+    membersResult,
+    currentWorkspaceResult,
+    pendingInvitationsResult,
+    sentInvitationsResult,
+    joinRequestsResult,
+    joinWorkspaceResult,
+  ] = await Promise.all([
     getMyWorkspacesAction(),
     getWorkspaceMembersAction(),
     getCurrentWorkspaceAction(),
     getPendingWorkspaceInvitationsAction(),
     getSentWorkspaceInvitationsAction(),
+    getWorkspaceJoinRequestsAction(),
+    join ? getWorkspaceByIdForJoinAction(join) : Promise.resolve(null),
   ]);
+
   const workspaces = workspacesResult.success ? workspacesResult.data : [];
   const members = membersResult.success ? membersResult.data : [];
   const currentWorkspace = currentWorkspaceResult.success ? currentWorkspaceResult.data : null;
   const pendingInvitations = pendingInvitationsResult.success ? pendingInvitationsResult.data : [];
   const sentInvitations = sentInvitationsResult.success ? sentInvitationsResult.data : [];
+  const joinRequests = joinRequestsResult.success ? joinRequestsResult.data : [];
+  const joinWorkspace = joinWorkspaceResult?.success ? joinWorkspaceResult.data : null;
+  const canManageWorkspace = currentWorkspace?.role === "OWNER" || currentWorkspace?.role === "ADMIN";
 
   return (
     <AppLayout>
@@ -38,22 +59,22 @@ export default async function WorkspacesPage() {
               <div className="mb-4 grid size-12 place-items-center rounded-2xl bg-blue-600 text-white">
                 <BriefcaseBusiness size={24} />
               </div>
-              <h2 className="text-3xl font-black text-slate-950">จัดการ Workspace แบบง่าย</h2>
+              <h2 className="text-3xl font-black text-slate-950">จัดการ Workspace</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                Workspace คือห้องหรือกลุ่มเก็บเงินของคุณ เลือกห้องที่ต้องการใช้งาน สร้างห้องใหม่ หรือเพิ่มผู้ช่วยด้วย username ได้จากหน้านี้
+                ผู้ใช้ต้องสมัครสมาชิกเองก่อน จากนั้นจึงขอเข้า workspace ผ่านคำเชิญหรือ QR และรอ OWNER/ADMIN อนุมัติ
               </p>
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl bg-white p-4">
-                  <p className="text-xs text-slate-500">1. เลือกห้อง</p>
-                  <p className="mt-1 font-bold text-slate-950">กดสลับมาใช้</p>
+                  <p className="text-xs text-slate-500">1. สมัครสมาชิก</p>
+                  <p className="mt-1 font-bold text-slate-950">สร้างบัญชีผู้ใช้</p>
                 </div>
                 <div className="rounded-2xl bg-white p-4">
-                  <p className="text-xs text-slate-500">2. เพิ่มผู้ช่วย</p>
-                  <p className="mt-1 font-bold text-slate-950">ใส่ username + role</p>
+                  <p className="text-xs text-slate-500">2. ขอเข้า workspace</p>
+                  <p className="mt-1 font-bold text-slate-950">สแกน QR หรือรับคำเชิญ</p>
                 </div>
                 <div className="rounded-2xl bg-white p-4">
-                  <p className="text-xs text-slate-500">3. เริ่มทำงาน</p>
-                  <p className="mt-1 font-bold text-slate-950">เพิ่มสมาชิกและสร้างรอบ</p>
+                  <p className="text-xs text-slate-500">3. รออนุมัติ</p>
+                  <p className="mt-1 font-bold text-slate-950">ผู้ดูแลกดอนุมัติ</p>
                 </div>
               </div>
             </div>
@@ -64,13 +85,44 @@ export default async function WorkspacesPage() {
                 </div>
                 <div>
                   <p className="text-sm text-slate-400">Workspace ปัจจุบัน</p>
-                  <p className="text-xl font-black">{currentWorkspace?.name ?? "-"}</p>
+                  <p className="text-xl font-black">{currentWorkspace?.name ?? "ยังไม่มี workspace"}</p>
                 </div>
               </div>
-              <p className="mt-5 text-sm leading-6 text-slate-300">ทุกหน้าในระบบจะอ่านและบันทึกข้อมูลเฉพาะ workspace นี้เท่านั้น</p>
+              <p className="mt-5 text-sm leading-6 text-slate-300">
+                {currentWorkspace
+                  ? "ข้อมูลทุกหน้าในระบบจะผูกกับ workspace ปัจจุบันเท่านั้น"
+                  : "คุณสามารถสร้าง workspace ใหม่เอง หรือขอเข้า workspace จาก QR/ลิงก์ที่ผู้ดูแลส่งให้"}
+              </p>
             </Card>
           </div>
         </section>
+
+        {joinWorkspace ? (
+          <Card className="border-blue-100 bg-blue-50">
+            <h2 className="text-lg font-bold text-slate-950">ขอเข้า workspace: {joinWorkspace.name}</h2>
+            <p className="mt-1 text-sm text-slate-600">{joinWorkspace.description ?? "ส่งคำขอเพื่อให้ผู้ดูแลอนุมัติเข้าใช้งาน"}</p>
+            <div className="mt-4">
+              <WorkspaceJoinRequestButton workspaceId={joinWorkspace.id} />
+            </div>
+          </Card>
+        ) : null}
+
+        {workspaces.length === 0 ? (
+          <Card>
+            <h2 className="text-lg font-bold text-slate-950">ยังไม่มี workspace</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              เริ่มต้นโดยสร้าง workspace ของตัวเอง หรือขอเข้า workspace จาก QR/ลิงก์เชิญที่ผู้ดูแลส่งมา
+            </p>
+          </Card>
+        ) : null}
+
+        <Card>
+          <h2 className="mb-2 text-lg font-bold">สแกน QR เข้า workspace</h2>
+          <p className="mb-4 text-sm leading-6 text-slate-500">
+            ใช้กล้องสแกน QR ที่ OWNER/ADMIN สร้างไว้ ระบบจะพาไปหน้าส่งคำขอและรออนุมัติก่อนเข้าใช้งาน
+          </p>
+          <WorkspaceQrScanner />
+        </Card>
 
         <div className="grid gap-5 xl:grid-cols-[1fr_420px]">
           <Card>
@@ -96,15 +148,26 @@ export default async function WorkspacesPage() {
                 <WorkspaceSettingsForm workspace={currentWorkspace} />
               </Card>
             ) : null}
-            <Card>
-              <h2 className="mb-2 text-lg font-bold">เพิ่มผู้ใช้เข้า Workspace</h2>
-              <p className="mb-4 text-sm text-slate-500">ค้นหาผู้ใช้แล้วส่งคำเชิญให้ตอบรับก่อนเข้าห้อง</p>
-              <WorkspaceInviteForm actorRole={currentWorkspace?.role} />
-            </Card>
-            <Card>
-              <h2 className="mb-4 text-lg font-bold">คำเชิญที่ส่งไปแล้ว</h2>
-              <SentWorkspaceInvitationList invitations={sentInvitations} />
-            </Card>
+            {canManageWorkspace && currentWorkspace ? (
+              <>
+                <Card>
+                  <h2 className="mb-2 text-lg font-bold">เชิญผู้ใช้เข้า Workspace</h2>
+                  <p className="mb-4 text-sm text-slate-500">ผู้ใช้ต้องมีบัญชีแล้ว ระบบจะส่งคำเชิญให้ตอบรับก่อนเข้า workspace</p>
+                  <WorkspaceInviteForm actorRole={currentWorkspace.role} />
+                </Card>
+                <Card>
+                  <WorkspaceJoinQr workspaceId={currentWorkspace.id} />
+                </Card>
+                <Card>
+                  <h2 className="mb-4 text-lg font-bold">คำขอเข้า workspace</h2>
+                  <WorkspaceJoinRequestList requests={joinRequests} />
+                </Card>
+                <Card>
+                  <h2 className="mb-4 text-lg font-bold">คำเชิญที่ส่งไปแล้ว</h2>
+                  <SentWorkspaceInvitationList invitations={sentInvitations} />
+                </Card>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -116,13 +179,15 @@ export default async function WorkspacesPage() {
           <WorkspaceInvitationList invitations={pendingInvitations} />
         </Card>
 
-        <Card>
-          <div className="mb-4 flex items-center gap-2">
-            <BookOpenText size={20} className="text-blue-600" />
-            <h2 className="text-lg font-bold">ใครอยู่ใน workspace นี้บ้าง</h2>
-          </div>
-          <WorkspaceMemberList members={members as any} actorRole={currentWorkspace?.role} />
-        </Card>
+        {currentWorkspace ? (
+          <Card>
+            <div className="mb-4 flex items-center gap-2">
+              <BookOpenText size={20} className="text-blue-600" />
+              <h2 className="text-lg font-bold">ผู้ใช้ใน workspace นี้</h2>
+            </div>
+            <WorkspaceMemberList members={members as any} actorRole={currentWorkspace.role} />
+          </Card>
+        ) : null}
       </div>
     </AppLayout>
   );

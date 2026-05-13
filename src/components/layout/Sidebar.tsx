@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import {
   BriefcaseBusiness,
@@ -9,7 +10,6 @@ import {
   LayoutDashboard,
   LogOut,
   Settings,
-  ShieldCheck,
   UserCog,
   UsersRound,
   WalletCards,
@@ -40,9 +40,14 @@ export async function Sidebar() {
     <aside className="relative z-10 hidden min-h-screen w-64 shrink-0 lg:block">
       <div className="flex h-screen flex-col overflow-hidden bg-[#11152e] p-5 text-white shadow-2xl shadow-blue-950/20">
         <div className="mb-6 flex items-center gap-3 px-1">
-          <div className="grid size-10 place-items-center rounded-2xl bg-blue-500/20 text-blue-200">
-            <ShieldCheck size={21} />
-          </div>
+          <Image
+            src="/images/school-saver-logo.webp"
+            alt="SchoolSaver"
+            width={44}
+            height={44}
+            className="size-11 rounded-2xl object-contain"
+            priority
+          />
           <div className="min-w-0">
             <p className="truncate text-xl font-black">SchoolSaver</p>
             <p className="text-[13px] text-slate-400">Smart classroom saving</p>

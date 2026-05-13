@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import QRCode from "qrcode";
 import { defaultPaymentMethods } from "@/constants/payment-methods";
 import { OWNER_ADMIN, OWNER_ONLY, requireWorkspaceRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -9,7 +11,9 @@ import { getSession, setCurrentWorkspace } from "@/lib/session";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
 import {
   inviteUserSchema,
+  approveJoinRequestSchema,
   removeWorkspaceMemberSchema,
+  requestJoinWorkspaceSchema,
   sendWorkspaceInvitationSchema,
   updateWorkspaceMemberRoleSchema,
   workspaceSchema,
@@ -37,6 +41,115 @@ export async function getCurrentWorkspaceAction() {
     return successResult({ ...current.workspace, role: current.role });
   } catch {
     return errorResult("ไม่พบ workspace ปัจจุบัน");
+  }
+}
+
+export async function generateWorkspaceJoinQrAction(workspaceId: string) {
+  try {
+    const current = await requireWorkspaceRole(OWNER_ADMIN);
+
+    if (current.workspaceId !== workspaceId) {
+      return errorResult("ไม่มีสิทธิ์สร้าง QR สำหรับ workspace นี้");
+    }
+
+    const requestHeaders = await headers();
+
+    const host =
+      requestHeaders.get("x-forwarded-host") ??
+      requestHeaders.get("host") ??
+      "localhost:3000";
+
+    const protocol =
+      requestHeaders.get("x-forwarded-proto") ??
+      (host.includes("localhost") ? "http" : "https");
+
+    const serverOrigin = `${protocol}://${host}`;
+    const joinUrl = `${serverOrigin}/workspaces?join=${workspaceId}`;
+
+    const qrSvg = await QRCode.toString(joinUrl, {
+      type: "svg",
+      errorCorrectionLevel: "H",
+      margin: 2,
+      width: 512,
+      color: {
+        dark: "#0f172a",
+        light: "#ffffff",
+      },
+    });
+
+    const logoUrl = `${serverOrigin}/images/school-saver-logo.webp`;
+
+    const logoResponse = await fetch(logoUrl, {
+      cache: "force-cache",
+    });
+
+    if (!logoResponse.ok) {
+      return errorResult("ไม่พบไฟล์โลโก้สำหรับสร้าง QR");
+    }
+
+    const logoBase64 = Buffer.from(await logoResponse.arrayBuffer()).toString("base64");
+
+    /**
+     * QRCode SVG ส่วนใหญ่ไม่ได้ใช้ viewBox 0 0 512 512
+     * แต่จะเป็นประมาณ 0 0 41 41 หรือใกล้เคียง
+     */
+    const viewBoxMatch = qrSvg.match(/viewBox="([^"]+)"/);
+
+    if (!viewBoxMatch) {
+      return errorResult("ไม่สามารถอ่านขนาด QR Code ได้");
+    }
+
+    const [, viewBoxValue] = viewBoxMatch;
+    const [, , viewBoxWidth, viewBoxHeight] = viewBoxValue
+      .split(" ")
+      .map(Number);
+
+    const logoSize = viewBoxWidth * 0.2;
+    const logoPadding = viewBoxWidth * 0;
+
+    const rectSize = logoSize + logoPadding * 2;
+    const rectX = (viewBoxWidth - rectSize) / 2;
+    const rectY = (viewBoxHeight - rectSize) / 2;
+
+    const logoX = (viewBoxWidth - logoSize) / 2;
+    const logoY = (viewBoxHeight - logoSize) / 2;
+
+    const logoMarkup = `
+      <g id="school-saver-logo">
+        <image 
+          href="data:image/webp;base64,${logoBase64}" 
+          x="${logoX}" 
+          y="${logoY}" 
+          width="${logoSize}" 
+          height="${logoSize}" 
+          preserveAspectRatio="xMidYMid meet"
+        />
+      </g>
+    `;
+
+    const qrWithLogoSvg = qrSvg.replace("</svg>", `${logoMarkup}</svg>`);
+
+    return successResult({
+      joinUrl,
+      logoUrl,
+      qrSvg: qrWithLogoSvg,
+    });
+  } catch (error) {
+    console.error(error);
+    return errorResult("ไม่สามารถสร้าง QR เข้า workspace ได้");
+  }
+}
+
+export async function getWorkspaceByIdForJoinAction(workspaceId: string) {
+  try {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { id: true, name: true, description: true },
+    });
+    if (!workspace) return errorResult("ไม่พบ workspace นี้");
+    return successResult(workspace);
+  } catch {
+    return errorResult("ไม่สามารถดึงข้อมูล workspace ได้");
   }
 }
 
@@ -216,6 +329,88 @@ export async function sendWorkspaceInvitationAction(data: unknown) {
   }
 }
 
+export async function requestJoinWorkspaceAction(data: unknown) {
+  try {
+    const session = await getSession();
+    if (!session) return errorResult("กรุณาเข้าสู่ระบบ");
+    const parsed = requestJoinWorkspaceSchema.safeParse(data);
+    if (!parsed.success) return errorResult("ข้อมูลคำขอไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+
+    const workspace = await prisma.workspace.findUnique({ where: { id: parsed.data.workspaceId } });
+    if (!workspace) return errorResult("ไม่พบ workspace นี้");
+
+    const membership = await prisma.workspaceMember.findFirst({
+      where: { workspaceId: parsed.data.workspaceId, userId: session.userId, status: "ACTIVE" },
+    });
+    if (membership) return errorResult("คุณอยู่ใน workspace นี้แล้ว");
+
+    const existing = await prisma.workspaceInvitation.findFirst({
+      where: { workspaceId: parsed.data.workspaceId, invitedUserId: session.userId, status: "PENDING" },
+    });
+    if (existing) return errorResult("คุณส่งคำขอหรือมีคำเชิญที่รอตอบรับอยู่แล้ว");
+
+    const request = await prisma.workspaceInvitation.create({
+      data: {
+        workspaceId: parsed.data.workspaceId,
+        invitedUserId: session.userId,
+        invitedById: session.userId,
+        role: "VIEWER",
+        message: parsed.data.message || "คำขอเข้าร่วม workspace จาก QR/ลิงก์",
+        status: "PENDING",
+      },
+    });
+    revalidatePath("/workspaces");
+    return successResult(request, "ส่งคำขอเข้า workspace แล้ว รอผู้ดูแลอนุมัติ");
+  } catch {
+    return errorResult("ไม่สามารถส่งคำขอเข้า workspace ได้");
+  }
+}
+
+export async function getWorkspaceJoinRequestsAction() {
+  try {
+    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const requests = await prisma.workspaceInvitation.findMany({
+      where: { workspaceId, status: "PENDING" },
+      include: {
+        invitedUser: { select: { id: true, username: true, fullName: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    return successResult(requests.filter((request) => request.invitedById === request.invitedUserId));
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถดึงคำขอเข้า workspace ได้");
+  }
+}
+
+export async function approveJoinRequestAction(data: unknown) {
+  try {
+    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const parsed = approveJoinRequestSchema.safeParse(data);
+    if (!parsed.success) return errorResult("ข้อมูลอนุมัติไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+    const invitation = await prisma.workspaceInvitation.findFirst({
+      where: { id: parsed.data.invitationId, workspaceId, status: "PENDING" },
+    });
+    if (!invitation) return errorResult("ไม่พบคำขอที่รออนุมัติ");
+
+    const membership = await prisma.$transaction(async (tx) => {
+      const saved = await tx.workspaceMember.upsert({
+        where: { workspaceId_userId: { workspaceId, userId: invitation.invitedUserId } },
+        update: { role: parsed.data.role, status: "ACTIVE" },
+        create: { workspaceId, userId: invitation.invitedUserId, role: parsed.data.role, status: "ACTIVE" },
+      });
+      await tx.workspaceInvitation.update({
+        where: { id: invitation.id },
+        data: { status: "ACCEPTED", role: parsed.data.role, respondedAt: new Date() },
+      });
+      return saved;
+    });
+    revalidatePath("/workspaces");
+    return successResult(membership, "อนุมัติให้เข้า workspace แล้ว");
+  } catch {
+    return errorResult("ไม่สามารถอนุมัติคำขอได้");
+  }
+}
+
 export async function getPendingWorkspaceInvitationsAction() {
   try {
     const session = await getSession();
@@ -228,7 +423,7 @@ export async function getPendingWorkspaceInvitationsAction() {
       },
       orderBy: { createdAt: "desc" },
     });
-    return successResult(invitations);
+    return successResult(invitations.filter((invitation) => invitation.invitedById !== invitation.invitedUserId));
   } catch {
     return errorResult("ไม่สามารถดึงคำเชิญได้");
   }
@@ -245,7 +440,7 @@ export async function getSentWorkspaceInvitationsAction() {
       },
       orderBy: { createdAt: "desc" },
     });
-    return successResult(invitations);
+    return successResult(invitations.filter((invitation) => invitation.invitedById !== invitation.invitedUserId));
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "ไม่สามารถดึงคำเชิญที่ส่งได้");
   }

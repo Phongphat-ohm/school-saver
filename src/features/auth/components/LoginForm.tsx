@@ -32,8 +32,8 @@ export function LoginForm() {
         });
       }}
     >
-      <Input label="Username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" className="lowercase" />
-      <Input label="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+      <Input label="ชื่อผู้ใช้" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" />
+      <Input label="รหัสผ่าน" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
       <Button disabled={pending} className="w-full">
         {pending ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
       </Button>

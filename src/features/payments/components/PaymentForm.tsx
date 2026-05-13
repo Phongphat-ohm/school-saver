@@ -12,10 +12,12 @@ export function PaymentForm({
   memberRoundId,
   outstandingAmount,
   paymentMethods,
+  onSuccess,
 }: {
   memberRoundId: string;
   outstandingAmount: number;
   paymentMethods: Array<{ id: string; name: string }>;
+  onSuccess?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -34,6 +36,7 @@ export function PaymentForm({
           const result = await payMemberRoundAction({ memberRoundId, amount, paymentMethodId, paidAt, note });
           closeLoading();
           if (result.success) {
+            onSuccess?.();
             await showSuccess(result.message ?? "สำเร็จ");
             router.refresh();
           } else await showError(result.message);

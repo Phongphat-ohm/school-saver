@@ -119,6 +119,9 @@ export async function payMemberRoundAction(data: unknown) {
       return { transaction, memberRound: updated };
     });
     revalidatePath("/");
+    revalidatePath("/payments");
+    revalidatePath("/rounds");
+    revalidatePath(`/rounds/${result.memberRound.roundId}`);
     return successResult(result, "บันทึกรับเงินสำเร็จ");
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "ไม่สามารถรับเงินได้");

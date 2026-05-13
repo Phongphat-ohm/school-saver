@@ -28,3 +28,13 @@ export const updateWorkspaceMemberRoleSchema = z.object({
 export const removeWorkspaceMemberSchema = z.object({
   userId: z.string().min(1),
 });
+
+export const requestJoinWorkspaceSchema = z.object({
+  workspaceId: z.string().min(1, "ไม่พบ workspace"),
+  message: z.string().optional(),
+});
+
+export const approveJoinRequestSchema = z.object({
+  invitationId: z.string().min(1),
+  role: z.enum(["ADMIN", "COLLECTOR", "VIEWER"]).default("VIEWER"),
+});

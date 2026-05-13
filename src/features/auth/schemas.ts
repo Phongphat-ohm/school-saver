@@ -1,20 +1,18 @@
 import { z } from "zod";
 
 export const loginSchema = z.object({
-  username: z.string().trim().min(1, "กรุณากรอก username"),
-  password: z.string().min(1, "กรุณากรอก password"),
+  username: z.string().trim().min(1, "กรุณากรอกชื่อผู้ใช้"),
+  password: z.string().min(1, "กรุณากรอกรหัสผ่าน"),
 });
 
 export const registerSchema = z
   .object({
-    username: z.string().trim().min(3, "username ต้องมีอย่างน้อย 3 ตัวอักษร"),
-    password: z.string().min(6, "password ต้องมีอย่างน้อย 6 ตัวอักษร"),
-    confirmPassword: z.string().min(1, "กรุณายืนยัน password"),
-    fullName: z.string().trim().min(1, "กรุณากรอกชื่อผู้ใช้"),
-    workspaceName: z.string().trim().min(1, "กรุณากรอกชื่อ workspace"),
-    workspaceDescription: z.string().optional(),
+    fullName: z.string().trim().min(1, "กรุณากรอกชื่อ"),
+    username: z.string().trim().min(3, "ชื่อผู้ใช้ต้องมีอย่างน้อย 3 ตัวอักษร"),
+    password: z.string().min(6, "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร"),
+    confirmPassword: z.string().min(1, "กรุณายืนยันรหัสผ่าน"),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "password และยืนยัน password ไม่ตรงกัน",
+    message: "รหัสผ่านและยืนยันรหัสผ่านไม่ตรงกัน",
     path: ["confirmPassword"],
   });

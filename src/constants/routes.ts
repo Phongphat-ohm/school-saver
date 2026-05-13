@@ -43,6 +43,10 @@ export function canShowNavigationItem(role: WorkspaceRole | null | undefined, it
 }
 
 export function getNavigationItemsForRole(role: WorkspaceRole | null | undefined) {
+  if (!role) {
+    const guestWorkspaceRoutes = new Set<string>([routes.workspaces, routes.help, routes.settings]);
+    return navigationItems.filter((item) => guestWorkspaceRoutes.has(item.href));
+  }
   return navigationItems.filter((item) => canShowNavigationItem(role, item));
 }
 

@@ -4,21 +4,19 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { UserPlus } from "lucide-react";
-import { registerAction } from "@/features/auth/actions";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { registerAction } from "@/features/auth/actions";
 import { closeLoading, showError, showLoading, showSuccess } from "@/lib/swal";
 
 export function RegisterForm() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState({
+    fullName: "",
     username: "",
     password: "",
     confirmPassword: "",
-    fullName: "",
-    workspaceName: "",
-    workspaceDescription: "",
   });
 
   const set = (key: keyof typeof form, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -34,22 +32,18 @@ export function RegisterForm() {
           closeLoading();
           if (result.success) {
             await showSuccess(result.message ?? "สมัครสมาชิกสำเร็จ");
-            router.push("/dashboard");
+            router.push("/workspaces");
             router.refresh();
           } else await showError(result.message);
         });
       }}
     >
-      <Input label="Username" value={form.username} onChange={(event) => set("username", event.target.value)} autoComplete="username" />
-      <Input label="ชื่อผู้ใช้" value={form.fullName} onChange={(event) => set("fullName", event.target.value)} />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Input label="Password" type="password" value={form.password} onChange={(event) => set("password", event.target.value)} autoComplete="new-password" />
-        <Input label="ยืนยัน Password" type="password" value={form.confirmPassword} onChange={(event) => set("confirmPassword", event.target.value)} autoComplete="new-password" />
-      </div>
-      <Input label="ชื่อ Workspace แรก" value={form.workspaceName} onChange={(event) => set("workspaceName", event.target.value)} placeholder="เช่น ห้อง ม.6/1" />
-      <Input label="รายละเอียด Workspace" value={form.workspaceDescription} onChange={(event) => set("workspaceDescription", event.target.value)} />
+      <Input label="ชื่อ" value={form.fullName} onChange={(event) => set("fullName", event.target.value)} autoComplete="name" />
+      <Input label="ชื่อผู้ใช้" value={form.username} onChange={(event) => set("username", event.target.value)} autoComplete="username" />
+      <Input label="รหัสผ่าน" type="password" value={form.password} onChange={(event) => set("password", event.target.value)} autoComplete="new-password" />
+      <Input label="ยืนยันรหัสผ่าน" type="password" value={form.confirmPassword} onChange={(event) => set("confirmPassword", event.target.value)} autoComplete="new-password" />
       <p className="rounded-2xl bg-blue-50 p-3 text-xs leading-5 text-blue-800">
-        ระบบจะกำหนดให้คุณเป็น OWNER ของ workspace แรกอัตโนมัติ เพื่อให้เริ่มจัดการห้องได้ครบและปลอดภัย
+        สมัครสมาชิกแล้วจะยังไม่มี workspace โดยอัตโนมัติ คุณสามารถสร้าง workspace เอง หรือขอเข้าร่วม workspace จากลิงก์/QR ที่ผู้ดูแลส่งให้
       </p>
       <Button disabled={pending} className="w-full gap-2">
         <UserPlus size={18} />สมัครสมาชิก

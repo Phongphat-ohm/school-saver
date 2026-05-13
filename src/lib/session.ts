@@ -5,7 +5,7 @@ const MAX_AGE = 60 * 60 * 24 * 30;
 
 export type SessionPayload = {
   userId: string;
-  currentWorkspaceId: string;
+  currentWorkspaceId: string | null;
 };
 
 function encodeSession(payload: SessionPayload) {
@@ -16,8 +16,11 @@ function decodeSession(value?: string): SessionPayload | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-    if (typeof parsed.userId === "string" && typeof parsed.currentWorkspaceId === "string") {
-      return parsed;
+    if (typeof parsed.userId === "string") {
+      return {
+        userId: parsed.userId,
+        currentWorkspaceId: typeof parsed.currentWorkspaceId === "string" ? parsed.currentWorkspaceId : null,
+      };
     }
     return null;
   } catch {
@@ -25,7 +28,7 @@ function decodeSession(value?: string): SessionPayload | null {
   }
 }
 
-export async function createSession(userId: string, workspaceId: string) {
+export async function createSession(userId: string, workspaceId: string | null) {
   const cookieStore = await cookies();
   cookieStore.set(COOKIE_NAME, encodeSession({ userId, currentWorkspaceId: workspaceId }), {
     httpOnly: true,

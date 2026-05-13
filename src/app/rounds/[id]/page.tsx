@@ -3,11 +3,13 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { RoundMemberList } from "@/features/rounds/components/RoundMemberList";
 import { RoundSummary } from "@/features/rounds/components/RoundSummary";
 import { getRoundDetailAction } from "@/features/rounds/actions";
+import { getPaymentMethodsAction } from "@/features/payment-methods/actions";
 import { formatThaiDate } from "@/lib/date";
 
 export default async function RoundDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const result = await getRoundDetailAction(id);
+  const [result, paymentMethodsResult] = await Promise.all([getRoundDetailAction(id), getPaymentMethodsAction()]);
+  const paymentMethods = paymentMethodsResult.success ? paymentMethodsResult.data : [];
   return (
     <AppLayout>
       {!result.success ? (
@@ -26,7 +28,7 @@ export default async function RoundDetailPage({ params }: { params: Promise<{ id
               </span>
             ))}
           </div>
-          <RoundMemberList memberRounds={result.data.memberRounds} />
+          <RoundMemberList memberRounds={result.data.memberRounds} paymentMethods={paymentMethods} round={result.data.round} />
         </div>
       )}
     </AppLayout>
