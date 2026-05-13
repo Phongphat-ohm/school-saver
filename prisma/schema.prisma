@@ -1,0 +1,278 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  COLLECTOR
+  VIEWER
+}
+
+enum WorkspaceMemberStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum FineType {
+  NONE
+  DAILY
+  WEEKLY
+  FIXED
+}
+
+enum RoundStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum MemberRoundStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  LATE_PAID
+  OVERDUE
+  PARTIAL_OVERDUE
+  WAIVED
+}
+
+enum PaymentMethodType {
+  CASH
+  BANK_TRANSFER
+  PROMPTPAY
+  TRUE_MONEY
+  OTHER
+}
+
+enum PaymentMethodStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WorkspaceInvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+model User {
+  id                    String               @id @default(cuid())
+  username              String               @unique
+  passwordHash          String
+  fullName              String
+  status                UserStatus           @default(ACTIVE)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  ownedWorkspaces       Workspace[]          @relation("WorkspaceOwner")
+  workspaceMemberships  WorkspaceMember[]
+  collectedTransactions PaymentTransaction[] @relation("CollectedBy")
+  activityLogs          ActivityLog[]
+  createdRounds         CollectionRound[]    @relation("RoundCreator")
+  sentWorkspaceInvites  WorkspaceInvitation[] @relation("WorkspaceInviteSender")
+  receivedWorkspaceInvites WorkspaceInvitation[] @relation("WorkspaceInviteReceiver")
+}
+
+model Workspace {
+  id                  String               @id @default(cuid())
+  name                String
+  description         String?
+  ownerId             String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  owner               User                 @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members             Member[]
+  rounds              CollectionRound[]
+  memberRounds        MemberRound[]
+  paymentTransactions PaymentTransaction[]
+  paymentMethods      PaymentMethod[]
+  activityLogs        ActivityLog[]
+  workspaceMembers    WorkspaceMember[]
+  invitations         WorkspaceInvitation[]
+}
+
+model WorkspaceInvitation {
+  id            String                    @id @default(cuid())
+  workspaceId   String
+  invitedUserId String
+  invitedById   String
+  role          WorkspaceRole
+  status        WorkspaceInvitationStatus @default(PENDING)
+  message       String?
+  respondedAt   DateTime?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  workspace     Workspace                 @relation(fields: [workspaceId], references: [id])
+  invitedUser   User                      @relation("WorkspaceInviteReceiver", fields: [invitedUserId], references: [id])
+  invitedBy     User                      @relation("WorkspaceInviteSender", fields: [invitedById], references: [id])
+
+  @@unique([workspaceId, invitedUserId, status])
+  @@index([workspaceId])
+  @@index([invitedUserId])
+  @@index([invitedById])
+}
+
+model WorkspaceMember {
+  id          String                @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole
+  status      WorkspaceMemberStatus @default(ACTIVE)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id])
+  user        User                  @relation(fields: [userId], references: [id])
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+}
+
+model Member {
+  id                  String               @id @default(cuid())
+  workspaceId         String
+  memberCode          String
+  studentNo           String?
+  fullName            String
+  classroom           String?
+  phone               String?
+  status              MemberStatus         @default(ACTIVE)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id])
+  memberRounds        MemberRound[]
+  paymentTransactions PaymentTransaction[]
+
+  @@unique([workspaceId, memberCode])
+  @@index([workspaceId, studentNo])
+}
+
+model CollectionRound {
+  id                  String               @id @default(cuid())
+  workspaceId         String
+  title               String
+  description         String?
+  targetAmount        Int
+  startDate           DateTime
+  dueDate             DateTime
+  fineEnabled         Boolean              @default(false)
+  fineType            FineType             @default(NONE)
+  fineAmount          Int                  @default(0)
+  fineMaxAmount       Int?
+  status              RoundStatus          @default(OPEN)
+  createdById         String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id])
+  createdBy           User                 @relation("RoundCreator", fields: [createdById], references: [id])
+  memberRounds        MemberRound[]
+  paymentTransactions PaymentTransaction[]
+
+  @@index([workspaceId])
+  @@index([createdById])
+}
+
+model MemberRound {
+  id                  String               @id @default(cuid())
+  workspaceId         String
+  roundId             String
+  memberId            String
+  targetAmount        Int
+  paidAmount          Int                  @default(0)
+  remainingAmount     Int
+  fineAmount          Int                  @default(0)
+  totalRequiredAmount Int
+  status              MemberRoundStatus    @default(UNPAID)
+  completedAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id])
+  round               CollectionRound      @relation(fields: [roundId], references: [id])
+  member              Member               @relation(fields: [memberId], references: [id])
+  transactions        PaymentTransaction[]
+
+  @@unique([roundId, memberId])
+  @@index([workspaceId])
+  @@index([roundId])
+  @@index([memberId])
+}
+
+model PaymentTransaction {
+  id              String          @id @default(cuid())
+  workspaceId     String
+  memberRoundId   String
+  roundId         String
+  memberId        String
+  amount          Int
+  paymentMethodId String
+  paidAt          DateTime
+  collectedById   String
+  note            String?
+  createdAt       DateTime        @default(now())
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id])
+  memberRound     MemberRound     @relation(fields: [memberRoundId], references: [id])
+  round           CollectionRound @relation(fields: [roundId], references: [id])
+  member          Member          @relation(fields: [memberId], references: [id])
+  paymentMethod   PaymentMethod   @relation(fields: [paymentMethodId], references: [id])
+  collectedBy     User            @relation("CollectedBy", fields: [collectedById], references: [id])
+
+  @@index([workspaceId])
+  @@index([memberRoundId])
+  @@index([roundId])
+  @@index([memberId])
+  @@index([paymentMethodId])
+  @@index([collectedById])
+}
+
+model PaymentMethod {
+  id            String              @id @default(cuid())
+  workspaceId   String
+  name          String
+  type          PaymentMethodType
+  accountName   String?
+  accountNumber String?
+  bankName      String?
+  qrImageUrl    String?
+  status        PaymentMethodStatus @default(ACTIVE)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  workspace     Workspace           @relation(fields: [workspaceId], references: [id])
+  transactions  PaymentTransaction[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+model ActivityLog {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  action      String
+  detail      String?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([workspaceId])
+  @@index([userId])
+}
