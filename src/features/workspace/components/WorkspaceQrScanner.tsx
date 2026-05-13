@@ -14,8 +14,13 @@ function extractWorkspaceId(rawValue: string) {
   try {
     const url = new URL(value);
     const joinId = url.searchParams.get("join");
+    const joinPathMatch = url.pathname.match(/\/workspaces\/join\/([^/]+)/);
+    if (joinPathMatch?.[1]) return decodeURIComponent(joinPathMatch[1]).trim();
     return joinId?.trim() || null;
   } catch {
+    const pathMatch = value.match(/\/workspaces\/join\/([^/?#]+)/);
+    if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]).trim();
+
     const queryMatch = value.match(/[?&]join=([^&]+)/);
     if (queryMatch?.[1]) return decodeURIComponent(queryMatch[1]).trim();
 
@@ -87,7 +92,7 @@ export function WorkspaceQrScanner() {
                     setLocked(true);
                     setError("");
                     setOpen(false);
-                    router.push(`/workspaces?join=${encodeURIComponent(workspaceId)}`);
+                    router.push(`/workspaces/join/${encodeURIComponent(workspaceId)}`);
                     router.refresh();
                   }}
                   onError={() => {

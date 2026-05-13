@@ -64,7 +64,7 @@ export async function generateWorkspaceJoinQrAction(workspaceId: string) {
       (host.includes("localhost") ? "http" : "https");
 
     const serverOrigin = `${protocol}://${host}`;
-    const joinUrl = `${serverOrigin}/workspaces?join=${workspaceId}`;
+    const joinUrl = `${serverOrigin}/workspaces/join/${workspaceId}`;
 
     const qrSvg = await QRCode.toString(joinUrl, {
       type: "svg",

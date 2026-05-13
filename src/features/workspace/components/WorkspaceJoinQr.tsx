@@ -21,6 +21,28 @@ function QrSvgPreview({ svg, sizeClass }: { svg: string; sizeClass: string }) {
   );
 }
 
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textarea);
+
+  if (!copied) throw new Error("copy failed");
+}
+
 export function WorkspaceJoinQr({ workspaceId }: { workspaceId: string }) {
   const [qrData, setQrData] = useState<WorkspaceQrData | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -76,8 +98,12 @@ export function WorkspaceJoinQr({ workspaceId }: { workspaceId: string }) {
             disabled={!qrData}
             onClick={async () => {
               if (!qrData) return;
-              await navigator.clipboard.writeText(qrData.joinUrl);
-              await showSuccess("คัดลอกลิงก์แล้ว");
+              try {
+                await copyText(qrData.joinUrl);
+                await showSuccess("คัดลอกลิงก์แล้ว");
+              } catch {
+                await showError("ไม่สามารถคัดลอกลิงก์อัตโนมัติได้ กรุณากดค้างที่ลิงก์แล้วคัดลอกเอง");
+              }
             }}
           >
             <Copy size={16} />
