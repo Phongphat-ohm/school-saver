@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { destroySession, getSession } from "@/lib/session";
+import { getSession } from "@/lib/session";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
 
 export async function getCurrentUser() {
@@ -10,10 +10,7 @@ export async function getCurrentUser() {
     where: { id: session.userId, status: "ACTIVE" },
     select: { id: true, username: true, fullName: true, status: true },
   });
-  if (!user) {
-    await destroySession();
-    return null;
-  }
+  if (!user) return null;
   return user;
 }
 

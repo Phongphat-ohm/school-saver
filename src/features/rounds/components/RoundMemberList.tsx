@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Search, SlidersHorizontal } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { QrCode, Search, SlidersHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { MemberPaymentQrScanner } from "@/features/payments/components/MemberPaymentQrScanner";
 import { PaymentCard } from "@/features/payments/components/PaymentCard";
 
 const statusOptions = [
@@ -34,14 +35,25 @@ export function RoundMemberList({
   memberRounds,
   paymentMethods = [],
   round,
+  initialKeyword = "",
 }: {
   memberRounds: any[];
   paymentMethods?: Array<{ id: string; name: string }>;
   round?: any;
+  initialKeyword?: string;
 }) {
-  const [keyword, setKeyword] = useState("");
+  const [keyword, setKeyword] = useState(initialKeyword);
   const [status, setStatus] = useState("ALL");
   const [payState, setPayState] = useState("ALL");
+
+  useEffect(() => {
+    setKeyword(initialKeyword);
+  }, [initialKeyword]);
+
+  function applyScannedMember(memberCode: string) {
+    setKeyword(memberCode);
+    setPayState("OUTSTANDING");
+  }
 
   const rows = useMemo(() => {
     const search = keyword.trim().toLowerCase();
@@ -68,6 +80,21 @@ export function RoundMemberList({
 
   return (
     <section className="grid gap-3">
+      <div className="rounded-2xl border border-blue-100 bg-[#eef3ff] p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-blue-600 text-white">
+              <QrCode size={22} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-bold text-slate-950">สแกน QR สมาชิกเพื่อชำระเงิน</h3>
+              <p className="mt-1 text-sm text-slate-600">สแกนแล้วระบบจะกรองรายการค้างชำระของสมาชิกคนนั้นให้ทันที</p>
+            </div>
+          </div>
+          <MemberPaymentQrScanner onScan={applyScannedMember} />
+        </div>
+      </div>
+
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         <div className="grid gap-3 md:grid-cols-[1fr_180px_180px] md:items-end">
           <div className="relative">

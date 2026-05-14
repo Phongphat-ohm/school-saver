@@ -2,7 +2,9 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { RoleGate } from "@/components/layout/RoleGate";
 import { PaymentSearch } from "@/features/payments/components/PaymentSearch";
 
-export default function PaymentsPage() {
+export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ member?: string }> }) {
+  const { member } = await searchParams;
+
   return (
     <AppLayout>
       <RoleGate allowedRoles={["OWNER", "ADMIN", "COLLECTOR"]}>
@@ -11,7 +13,7 @@ export default function PaymentsPage() {
           <h2 className="text-2xl font-bold text-slate-950">รับชำระเงิน</h2>
           <p className="text-sm text-slate-500">แสดงสมาชิกที่ยังจ่ายไม่ครบใน workspace ปัจจุบัน</p>
         </div>
-        <PaymentSearch />
+        <PaymentSearch memberCode={member} />
         </div>
       </RoleGate>
     </AppLayout>

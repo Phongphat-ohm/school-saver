@@ -3,6 +3,7 @@ import { ArrowRight, BookOpenText, BriefcaseBusiness, QrCode, Settings2, UsersRo
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card } from "@/components/ui/Card";
 import { WorkspaceCard } from "@/features/workspace/components/WorkspaceCard";
+import { WorkspaceDataRefreshButton } from "@/features/workspace/components/WorkspaceDataRefreshButton";
 import { WorkspaceForm } from "@/features/workspace/components/WorkspaceForm";
 import { WorkspaceInvitationList } from "@/features/workspace/components/WorkspaceInvitationList";
 import { WorkspaceJoinRequestButton } from "@/features/workspace/components/WorkspaceJoinRequestButton";
@@ -123,9 +124,12 @@ export default async function WorkspacesPage({ searchParams }: { searchParams: P
             </Card>
 
             <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <BookOpenText size={20} className="text-blue-600" />
-                <h2 className="text-lg font-bold">คำเชิญเข้า workspace ของฉัน</h2>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <BookOpenText size={20} className="text-blue-600" />
+                  <h2 className="text-lg font-bold">คำเชิญเข้า workspace ของฉัน</h2>
+                </div>
+                <WorkspaceDataRefreshButton label="โหลดคำเชิญ" />
               </div>
               <WorkspaceInvitationList invitations={pendingInvitations} />
             </Card>

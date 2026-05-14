@@ -3,6 +3,7 @@ import { ArrowLeft, BookOpenText, BriefcaseBusiness, MailPlus, QrCode, Settings2
 import { AppLayout } from "@/components/layout/AppLayout";
 import { RoleGate } from "@/components/layout/RoleGate";
 import { Card } from "@/components/ui/Card";
+import { WorkspaceDataRefreshButton } from "@/features/workspace/components/WorkspaceDataRefreshButton";
 import { SentWorkspaceInvitationList } from "@/features/workspace/components/WorkspaceInvitationList";
 import { WorkspaceInviteForm } from "@/features/workspace/components/WorkspaceInviteForm";
 import { WorkspaceJoinQr } from "@/features/workspace/components/WorkspaceJoinQr";
@@ -69,9 +70,12 @@ export default async function WorkspaceManagePage() {
                 </Card>
 
                 <Card>
-                  <div className="mb-4 flex items-center gap-2">
-                    <UserRoundPlus size={20} className="text-blue-600" />
-                    <h2 className="text-lg font-bold">คำขอเข้า workspace</h2>
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <UserRoundPlus size={20} className="text-blue-600" />
+                      <h2 className="text-lg font-bold">คำขอเข้า workspace</h2>
+                    </div>
+                    <WorkspaceDataRefreshButton label="โหลดคำขอ" />
                   </div>
                   <WorkspaceJoinRequestList requests={joinRequests} />
                 </Card>
@@ -95,9 +99,12 @@ export default async function WorkspaceManagePage() {
                 </Card>
 
                 <Card>
-                  <div className="mb-4 flex items-center gap-2">
-                    <BookOpenText size={20} className="text-blue-600" />
-                    <h2 className="text-lg font-bold">คำเชิญที่ส่งแล้ว</h2>
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <BookOpenText size={20} className="text-blue-600" />
+                      <h2 className="text-lg font-bold">คำเชิญที่ส่งแล้ว</h2>
+                    </div>
+                    <WorkspaceDataRefreshButton label="โหลดคำเชิญ" />
                   </div>
                   <SentWorkspaceInvitationList invitations={sentInvitations} />
                 </Card>

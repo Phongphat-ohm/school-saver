@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { disableMemberAction, disableMembersAction, updateMemberAction } from "@/features/members/actions";
+import { MemberQrButton } from "@/features/members/components/MemberQrButton";
 import { closeLoading, showConfirm, showError, showLoading, showSuccess } from "@/lib/swal";
 
 type SortKey = "memberCode" | "studentNo" | "fullName" | "classroom" | "status";
@@ -166,6 +167,7 @@ export function MemberTable({ members }: { members: Member[] }) {
                 <td className="p-3"><StatusBadge status={member.status} /></td>
                 <td className="p-3">
                   <div className="flex justify-end gap-2">
+                    <MemberQrButton memberCode={member.memberCode} fullName={member.fullName} />
                     <Button type="button" variant="secondary" className="gap-2" onClick={() => openEdit(member)}>
                       <Edit3 size={16} />แก้ไข
                     </Button>
@@ -201,7 +203,8 @@ export function MemberTable({ members }: { members: Member[] }) {
               <StatusBadge status={member.status} />
             </div>
             <p className="mt-2 text-sm text-slate-500">{member.classroom ?? "-"} {member.phone ? `• ${member.phone}` : ""}</p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <MemberQrButton memberCode={member.memberCode} fullName={member.fullName} />
               <Button type="button" variant="secondary" className="gap-2" onClick={() => openEdit(member)}>
                 <Edit3 size={16} />แก้ไข
               </Button>
