@@ -117,7 +117,16 @@ export async function getCollectionRoundsAction() {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
     const rounds = await prisma.collectionRound.findMany({
       where: { workspaceId },
-      include: { memberRounds: true },
+      include: {
+        memberRounds: {
+          select: {
+            status: true,
+            targetAmount: true,
+            paidAmount: true,
+            remainingAmount: true,
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
     return successResult(rounds.map((round) => ({ ...round, summary: summarize(round.memberRounds) })));

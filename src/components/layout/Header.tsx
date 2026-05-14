@@ -38,10 +38,10 @@ export async function Header() {
           </div>
         </div>
         <div className="hidden min-w-0 flex-1 items-center gap-3 lg:flex">
-          <div className="flex h-11 w-full max-w-md items-center gap-2 rounded-2xl bg-white px-4 text-slate-400 shadow-sm">
+          {/* <div className="flex h-11 w-full max-w-md items-center gap-2 rounded-2xl bg-white px-4 text-slate-400 shadow-sm">
             <Search size={17} />
             <span className="text-sm">Search</span>
-          </div>
+          </div> */}
           <div className="min-w-0">
             <h1 className="truncate text-lg font-bold text-slate-950">{workspace?.name ?? "Workspace"}</h1>
             <p className="truncate text-xs text-slate-500">ระบบเก็บเงินห้องอัจฉริยะ</p>

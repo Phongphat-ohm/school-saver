@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { disableWorkspaceUserAction, updateWorkspaceUserRoleAction } from "@/features/users/actions";
+import { removeWorkspaceMemberAction } from "@/features/workspace/actions";
+import { updateWorkspaceUserRoleAction } from "@/features/users/actions";
 import { closeLoading, showConfirm, showError, showLoading, showSuccess } from "@/lib/swal";
 
 const roleIcons = {
@@ -48,7 +49,9 @@ export function WorkspaceMemberList({
                 </div>
                 <div>
                   <p className="font-semibold text-slate-950">{member.user.fullName}</p>
-                  <p className="text-sm text-slate-500">{member.user.username} • {roleLabels[member.role]}</p>
+                  <p className="text-sm text-slate-500">
+                    {member.user.username} • {roleLabels[member.role]}
+                  </p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -65,27 +68,31 @@ export function WorkspaceMemberList({
                         setRole(member.role);
                       }}
                     >
-                      <Edit3 size={16} />เปลี่ยน role
+                      <Edit3 size={16} />
+                      เปลี่ยน role
                     </Button>
                     <Button
                       type="button"
                       variant="danger"
                       className="gap-2"
-                      disabled={member.status === "INACTIVE" || lockedForAdmin}
+                      disabled={pending || lockedForAdmin}
                       onClick={() => {
                         startTransition(async () => {
-                          if (!(await showConfirm("ปิดใช้งานผู้ใช้", `ต้องการปิดใช้งาน ${member.user.fullName} ใน workspace นี้หรือไม่?`))) return;
-                          showLoading();
-                          const result = await disableWorkspaceUserAction(member.id);
+                          if (!(await showConfirm("ลบผู้ใช้ออกจาก workspace", `ต้องการลบ ${member.user.fullName} ออกจาก workspace นี้หรือไม่?`))) return;
+                          showLoading("กำลังลบผู้ใช้ออกจาก workspace");
+                          const result = await removeWorkspaceMemberAction({ userId: member.user.id });
                           closeLoading();
                           if (result.success) {
-                            await showSuccess(result.message ?? "ปิดใช้งานแล้ว");
+                            await showSuccess(result.message ?? "ลบผู้ใช้ออกจาก workspace แล้ว");
                             router.refresh();
-                          } else await showError(result.message);
+                          } else {
+                            await showError(result.message);
+                          }
                         });
                       }}
                     >
-                      <UserX size={16} />ปิดใช้งาน
+                      <UserX size={16} />
+                      ลบออก
                     </Button>
                   </>
                 ) : null}
@@ -109,7 +116,9 @@ export function WorkspaceMemberList({
                 await showSuccess(result.message ?? "เปลี่ยน role สำเร็จ");
                 setEditing(null);
                 router.refresh();
-              } else await showError(result.message);
+              } else {
+                await showError(result.message);
+              }
             });
           }}
         >

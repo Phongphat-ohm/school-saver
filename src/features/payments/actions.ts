@@ -27,10 +27,33 @@ export async function searchMembersForPaymentAction(keyword = "") {
             ]
           : undefined,
       },
-      include: {
+      select: {
+        id: true,
+        workspaceId: true,
+        memberCode: true,
+        studentNo: true,
+        fullName: true,
+        classroom: true,
+        phone: true,
+        status: true,
         memberRounds: {
           where: { workspaceId, status: { in: [...unpaidStatuses] }, round: { status: "OPEN" } },
-          include: { round: true },
+          select: {
+            id: true,
+            workspaceId: true,
+            roundId: true,
+            memberId: true,
+            targetAmount: true,
+            paidAmount: true,
+            remainingAmount: true,
+            fineAmount: true,
+            totalRequiredAmount: true,
+            status: true,
+            completedAt: true,
+            createdAt: true,
+            updatedAt: true,
+            round: true,
+          },
           orderBy: { createdAt: "desc" },
         },
       },
@@ -166,7 +189,23 @@ export async function getUnpaidAndPartialPaymentsAction(roundId?: string) {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
     const rows = await prisma.memberRound.findMany({
       where: { workspaceId, roundId, status: { in: [...unpaidStatuses] } },
-      include: { member: true, round: true },
+      select: {
+        id: true,
+        workspaceId: true,
+        roundId: true,
+        memberId: true,
+        targetAmount: true,
+        paidAmount: true,
+        remainingAmount: true,
+        fineAmount: true,
+        totalRequiredAmount: true,
+        status: true,
+        completedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        member: true,
+        round: true,
+      },
       orderBy: { remainingAmount: "desc" },
     });
     const today = new Date();

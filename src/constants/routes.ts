@@ -5,6 +5,7 @@ export const routes = {
   login: "/login",
   dashboard: "/dashboard",
   workspaces: "/workspaces",
+  workspaceManage: "/workspaces/manage",
   rounds: "/rounds",
   payments: "/payments",
   overdue: "/overdue",
@@ -27,6 +28,7 @@ export const navigationItems = [
   { label: "สมาชิก", href: routes.members, icon: "UsersRound", group: "จัดการข้อมูล", allowedRoles: ["OWNER", "ADMIN", "COLLECTOR"] },
   { label: "วิธีชำระเงิน", href: routes.paymentMethods, icon: "CreditCard", group: "จัดการข้อมูล", allowedRoles: ["OWNER", "ADMIN"] },
   { label: "ผู้ใช้งาน", href: routes.users, icon: "UserCog", group: "จัดการข้อมูล", allowedRoles: ["OWNER", "ADMIN"] },
+  { label: "จัดการ Workspace", href: routes.workspaceManage, icon: "BriefcaseBusiness", group: "จัดการข้อมูล", allowedRoles: ["OWNER", "ADMIN"] },
   { label: "รายงาน", href: routes.reports, icon: "ChartNoAxesCombined", group: "รายงานและระบบ", allowedRoles: ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"] },
   { label: "วิธีใช้งาน", href: routes.help, icon: "BookOpenText", group: "รายงานและระบบ", allowedRoles: ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"] },
   { label: "ตั้งค่า", href: routes.settings, icon: "Settings", group: "รายงานและระบบ", allowedRoles: ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"] },
@@ -51,6 +53,8 @@ export function getNavigationItemsForRole(role: WorkspaceRole | null | undefined
 }
 
 export function getAllowedRolesForPath(pathname: string): WorkspaceRole[] | null {
-  const match = navigationItems.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+  const match = [...navigationItems]
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
   return match?.allowedRoles ?? null;
 }

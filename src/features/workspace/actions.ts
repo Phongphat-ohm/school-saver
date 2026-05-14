@@ -1,8 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
-import QRCode from "qrcode";
 import { defaultPaymentMethods } from "@/constants/payment-methods";
 import { OWNER_ADMIN, OWNER_ONLY, requireWorkspaceRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -41,102 +39,6 @@ export async function getCurrentWorkspaceAction() {
     return successResult({ ...current.workspace, role: current.role });
   } catch {
     return errorResult("ไม่พบ workspace ปัจจุบัน");
-  }
-}
-
-export async function generateWorkspaceJoinQrAction(workspaceId: string) {
-  try {
-    const current = await requireWorkspaceRole(OWNER_ADMIN);
-
-    if (current.workspaceId !== workspaceId) {
-      return errorResult("ไม่มีสิทธิ์สร้าง QR สำหรับ workspace นี้");
-    }
-
-    const requestHeaders = await headers();
-
-    const host =
-      requestHeaders.get("x-forwarded-host") ??
-      requestHeaders.get("host") ??
-      "localhost:3000";
-
-    const protocol =
-      requestHeaders.get("x-forwarded-proto") ??
-      (host.includes("localhost") ? "http" : "https");
-
-    const serverOrigin = `${protocol}://${host}`;
-    const joinUrl = `${serverOrigin}/workspaces/join/${workspaceId}`;
-
-    const qrSvg = await QRCode.toString(joinUrl, {
-      type: "svg",
-      errorCorrectionLevel: "H",
-      margin: 2,
-      width: 512,
-      color: {
-        dark: "#0f172a",
-        light: "#ffffff",
-      },
-    });
-
-    const logoUrl = `${serverOrigin}/images/school-saver-logo.webp`;
-
-    const logoResponse = await fetch(logoUrl, {
-      cache: "force-cache",
-    });
-
-    if (!logoResponse.ok) {
-      return errorResult("ไม่พบไฟล์โลโก้สำหรับสร้าง QR");
-    }
-
-    const logoBase64 = Buffer.from(await logoResponse.arrayBuffer()).toString("base64");
-
-    /**
-     * QRCode SVG ส่วนใหญ่ไม่ได้ใช้ viewBox 0 0 512 512
-     * แต่จะเป็นประมาณ 0 0 41 41 หรือใกล้เคียง
-     */
-    const viewBoxMatch = qrSvg.match(/viewBox="([^"]+)"/);
-
-    if (!viewBoxMatch) {
-      return errorResult("ไม่สามารถอ่านขนาด QR Code ได้");
-    }
-
-    const [, viewBoxValue] = viewBoxMatch;
-    const [, , viewBoxWidth, viewBoxHeight] = viewBoxValue
-      .split(" ")
-      .map(Number);
-
-    const logoSize = viewBoxWidth * 0.2;
-    const logoPadding = viewBoxWidth * 0;
-
-    const rectSize = logoSize + logoPadding * 2;
-    const rectX = (viewBoxWidth - rectSize) / 2;
-    const rectY = (viewBoxHeight - rectSize) / 2;
-
-    const logoX = (viewBoxWidth - logoSize) / 2;
-    const logoY = (viewBoxHeight - logoSize) / 2;
-
-    const logoMarkup = `
-      <g id="school-saver-logo">
-        <image 
-          href="data:image/webp;base64,${logoBase64}" 
-          x="${logoX}" 
-          y="${logoY}" 
-          width="${logoSize}" 
-          height="${logoSize}" 
-          preserveAspectRatio="xMidYMid meet"
-        />
-      </g>
-    `;
-
-    const qrWithLogoSvg = qrSvg.replace("</svg>", `${logoMarkup}</svg>`);
-
-    return successResult({
-      joinUrl,
-      logoUrl,
-      qrSvg: qrWithLogoSvg,
-    });
-  } catch (error) {
-    console.error(error);
-    return errorResult("ไม่สามารถสร้าง QR เข้า workspace ได้");
   }
 }
 
@@ -206,6 +108,38 @@ export async function updateCurrentWorkspaceAction(data: unknown) {
     return successResult(workspace, "แก้ไข workspace สำเร็จ");
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "ไม่สามารถแก้ไข workspace ได้");
+  }
+}
+
+export async function deleteCurrentWorkspaceAction() {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ONLY);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.paymentTransaction.deleteMany({ where: { workspaceId } });
+      await tx.activityLog.deleteMany({ where: { workspaceId } });
+      await tx.workspaceInvitation.deleteMany({ where: { workspaceId } });
+      await tx.memberRound.deleteMany({ where: { workspaceId } });
+      await tx.collectionRound.deleteMany({ where: { workspaceId } });
+      await tx.paymentMethod.deleteMany({ where: { workspaceId } });
+      await tx.member.deleteMany({ where: { workspaceId } });
+      await tx.workspaceMember.deleteMany({ where: { workspaceId } });
+      await tx.workspace.delete({ where: { id: workspaceId } });
+    });
+
+    const nextWorkspace = await prisma.workspaceMember.findFirst({
+      where: { userId, status: "ACTIVE" },
+      orderBy: { createdAt: "asc" },
+      select: { workspaceId: true },
+    });
+    await setCurrentWorkspace(nextWorkspace?.workspaceId ?? null);
+
+    revalidatePath("/");
+    revalidatePath("/workspaces");
+    revalidatePath("/settings");
+    return successResult({ nextWorkspaceId: nextWorkspace?.workspaceId ?? null }, "ลบ workspace แล้ว");
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถลบ workspace ได้");
   }
 }
 
@@ -528,18 +462,27 @@ export async function updateWorkspaceMemberRoleAction(data: unknown) {
 
 export async function removeWorkspaceMemberAction(data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ONLY);
+    const { workspaceId, userId, role: actorRole } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = removeWorkspaceMemberSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+    if (parsed.data.userId === userId) return errorResult("ไม่สามารถลบตัวเองออกจาก workspace ได้");
+
+    const target = await prisma.workspaceMember.findFirst({
+      where: { workspaceId, userId: parsed.data.userId, status: "ACTIVE" },
+    });
+    if (!target) return errorResult("ไม่พบผู้ใช้ใน workspace นี้");
+    if (actorRole === "ADMIN" && target.role === "OWNER") return errorResult("ADMIN ไม่สามารถลบ OWNER ออกจาก workspace ได้");
+
     await ensureOwnerCanChange(workspaceId, parsed.data.userId);
     const updated = await prisma.workspaceMember.update({
       where: { workspaceId_userId: { workspaceId, userId: parsed.data.userId } },
       data: { status: "INACTIVE" },
     });
     revalidatePath("/workspaces");
-    return successResult(updated, "ปิดใช้งานผู้ช่วยใน workspace แล้ว");
+    revalidatePath("/users");
+    return successResult(updated, "ลบผู้ใช้ออกจาก workspace แล้ว");
   } catch (error) {
-    return errorResult(error instanceof Error ? error.message : "ไม่สามารถปิดใช้งานผู้ช่วยได้");
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถลบผู้ใช้ออกจาก workspace ได้");
   }
 }
 
@@ -547,7 +490,7 @@ export async function getWorkspaceMembersAction() {
   try {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
     const members = await prisma.workspaceMember.findMany({
-      where: { workspaceId },
+      where: { workspaceId, status: "ACTIVE" },
       include: { user: { select: { id: true, username: true, fullName: true, status: true } } },
       orderBy: [{ role: "asc" }, { createdAt: "asc" }],
     });

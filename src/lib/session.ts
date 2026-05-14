@@ -49,7 +49,7 @@ export async function destroySession() {
   cookieStore.delete(COOKIE_NAME);
 }
 
-export async function setCurrentWorkspace(workspaceId: string) {
+export async function setCurrentWorkspace(workspaceId: string | null) {
   const session = await getSession();
   if (!session) return;
   await createSession(session.userId, workspaceId);

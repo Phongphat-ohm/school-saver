@@ -7,14 +7,18 @@ export function Modal({
   title,
   open,
   onClose,
-  children
+  children,
+  size = "md",
 }: {
   title: string;
   open: boolean;
   onClose: () => void;
-  children: ReactNode
+  children: ReactNode;
+  size?: "md" | "lg";
 }) {
   if (!open) return null;
+
+  const sizeClass = size === "lg" ? "max-w-3xl" : "max-w-lg";
 
   return (
     // 1. Container หลัก: กำหนดให้ครอบเต็มจอ และใส่ overflow-y-auto เพื่อให้มี Scrollbar ที่ระดับนี้
@@ -24,7 +28,7 @@ export function Modal({
       <div className="flex min-h-full items-center justify-center p-4 py-10">
         
         {/* 3. ตัว Modal: ปล่อยความสูงให้ยืดตามเนื้อหา (ลบ max-h และ overflow ออก) */}
-        <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <div className={`relative w-full ${sizeClass} rounded-2xl bg-white p-4 shadow-2xl sm:p-6`}>
 
           {/* Header Section */}
           <div className="mb-5 flex items-center justify-between gap-3">

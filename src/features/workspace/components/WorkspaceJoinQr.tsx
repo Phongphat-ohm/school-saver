@@ -1,23 +1,37 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
+import { ReactQRCode } from "@lglab/react-qr-code";
 import { Copy, Maximize2, QrCode, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { generateWorkspaceJoinQrAction } from "@/features/workspace/actions";
 import { showError, showSuccess } from "@/lib/swal";
 
-type WorkspaceQrData = {
-  joinUrl: string;
-  logoUrl: string;
-  qrSvg: string;
-};
+function getJoinUrl(workspaceId: string) {
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}/workspaces/join/${encodeURIComponent(workspaceId)}`;
+}
 
-function QrSvgPreview({ svg, sizeClass }: { svg: string; sizeClass: string }) {
+function QrPreview({ value, size, sizeClass }: { value: string; size: number; sizeClass: string }) {
   return (
-    <div
-      className={`${sizeClass} overflow-hidden rounded-[1.25rem] bg-white [&_svg]:h-full [&_svg]:w-full`}
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <div className={`${sizeClass} overflow-hidden rounded-[1.25rem] bg-white [&_svg]:h-full [&_svg]:w-full`}>
+      <ReactQRCode
+        value={value}
+        size={size}
+        level="H"
+        marginSize={2}
+        background="#ffffff"
+        dataModulesSettings={{ color: "#0f172a", style: "square" }}
+        finderPatternOuterSettings={{ color: "#0f172a", style: "rounded" }}
+        finderPatternInnerSettings={{ color: "#0f172a", style: "rounded" }}
+        imageSettings={{
+          src: "/images/school-saver-logo.webp",
+          width: size * 0.2,
+          height: size * 0.2,
+          excavate: true,
+        }}
+        svgProps={{ role: "img", "aria-label": "QR code for joining workspace" }}
+      />
+    </div>
   );
 }
 
@@ -44,25 +58,15 @@ async function copyText(text: string) {
 }
 
 export function WorkspaceJoinQr({ workspaceId }: { workspaceId: string }) {
-  const [qrData, setQrData] = useState<WorkspaceQrData | null>(null);
+  const [joinUrl, setJoinUrl] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const [pending, startTransition] = useTransition();
 
-  function loadQr() {
-    startTransition(async () => {
-      const result = await generateWorkspaceJoinQrAction(workspaceId);
-
-      if (result.success) {
-        setQrData(result.data);
-      } else {
-        await showError(result.message);
-      }
-    });
+  function refreshJoinUrl() {
+    setJoinUrl(getJoinUrl(workspaceId));
   }
 
   useEffect(() => {
-    loadQr();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    refreshJoinUrl();
   }, [workspaceId]);
 
   return (
@@ -73,33 +77,33 @@ export function WorkspaceJoinQr({ workspaceId }: { workspaceId: string }) {
           QR ขอเข้า workspace
         </div>
 
-        {qrData ? (
+        {joinUrl ? (
           <button
             type="button"
             onClick={() => setExpanded(true)}
             className="mx-auto rounded-[1.25rem] bg-white p-3 shadow-sm transition hover:scale-[1.01] hover:shadow-md"
             aria-label="ขยาย QR"
           >
-            <QrSvgPreview svg={qrData.qrSvg} sizeClass="size-44" />
+            <QrPreview value={joinUrl} size={176} sizeClass="size-44" />
           </button>
         ) : (
           <div className="mx-auto grid size-44 place-items-center rounded-[1.25rem] bg-white p-3 text-center text-xs text-slate-400 shadow-sm">
-            {pending ? "กำลังสร้าง QR" : "ยังไม่มี QR"}
+            กำลังสร้าง QR
           </div>
         )}
 
-        <p className="break-all rounded-xl bg-white p-3 text-xs text-slate-500">{qrData?.joinUrl ?? "กำลังสร้างลิงก์เชิญ"}</p>
+        <p className="break-all rounded-xl bg-white p-3 text-xs text-slate-500">{joinUrl || "กำลังสร้างลิงก์เชิญ"}</p>
 
         <div className="grid gap-2 sm:grid-cols-2">
           <Button
             type="button"
             variant="secondary"
             className="gap-2"
-            disabled={!qrData}
+            disabled={!joinUrl}
             onClick={async () => {
-              if (!qrData) return;
+              if (!joinUrl) return;
               try {
-                await copyText(qrData.joinUrl);
+                await copyText(joinUrl);
                 await showSuccess("คัดลอกลิงก์แล้ว");
               } catch {
                 await showError("ไม่สามารถคัดลอกลิงก์อัตโนมัติได้ กรุณากดค้างที่ลิงก์แล้วคัดลอกเอง");
@@ -109,23 +113,19 @@ export function WorkspaceJoinQr({ workspaceId }: { workspaceId: string }) {
             <Copy size={16} />
             คัดลอกลิงก์
           </Button>
-          <Button type="button" className="gap-2" disabled={!qrData} onClick={() => setExpanded(true)}>
+          <Button type="button" className="gap-2" disabled={!joinUrl} onClick={() => setExpanded(true)}>
             <Maximize2 size={16} />
             ขยาย QR
           </Button>
         </div>
 
-        <Button type="button" variant="ghost" className="gap-2" disabled={pending} onClick={loadQr}>
-          <RefreshCw size={16} className={pending ? "animate-spin" : ""} />
+        <Button type="button" variant="ghost" className="gap-2" onClick={refreshJoinUrl}>
+          <RefreshCw size={16} />
           สร้าง QR ใหม่
         </Button>
-{/* 
-        <p className="text-xs leading-5 text-slate-500">
-          QR นี้สร้างด้วย Node.js library และฝังโลโก้จาก /images/school-saver-logo.webp ตรงกลาง ผู้ใช้ที่สแกนจะส่งคำขอเข้าร่วมและต้องรอ OWNER/ADMIN อนุมัติ
-        </p> */}
       </div>
 
-      {expanded && qrData ? (
+      {expanded && joinUrl ? (
         <div className="fixed inset-0 z-[10000] overflow-y-auto bg-slate-950/75 p-4 backdrop-blur-sm">
           <div className="mx-auto flex min-h-full max-w-xl items-center justify-center py-8">
             <div className="w-full rounded-[1.75rem] bg-white p-5 shadow-2xl">
@@ -145,10 +145,10 @@ export function WorkspaceJoinQr({ workspaceId }: { workspaceId: string }) {
               </div>
 
               <div className="grid place-items-center rounded-[1.5rem] bg-slate-50 p-4">
-                <QrSvgPreview svg={qrData.qrSvg} sizeClass="w-full max-w-[420px]" />
+                <QrPreview value={joinUrl} size={420} sizeClass="w-full max-w-[420px]" />
               </div>
 
-              <p className="mt-4 break-all rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">{qrData.joinUrl}</p>
+              <p className="mt-4 break-all rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">{joinUrl}</p>
               <Button type="button" className="mt-4 w-full gap-2" onClick={() => setExpanded(false)}>
                 ปิด
               </Button>

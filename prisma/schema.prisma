@@ -128,7 +128,9 @@ model WorkspaceInvitation {
 
   @@unique([workspaceId, invitedUserId, status])
   @@index([workspaceId])
+  @@index([workspaceId, status, createdAt])
   @@index([invitedUserId])
+  @@index([invitedUserId, status, createdAt])
   @@index([invitedById])
 }
 
@@ -145,7 +147,9 @@ model WorkspaceMember {
 
   @@unique([workspaceId, userId])
   @@index([workspaceId])
+  @@index([workspaceId, status, role, createdAt])
   @@index([userId])
+  @@index([userId, status, createdAt])
 }
 
 model Member {
@@ -164,6 +168,7 @@ model Member {
   paymentTransactions PaymentTransaction[]
 
   @@unique([workspaceId, memberCode])
+  @@index([workspaceId, status])
   @@index([workspaceId, studentNo])
 }
 
@@ -189,6 +194,7 @@ model CollectionRound {
   paymentTransactions PaymentTransaction[]
 
   @@index([workspaceId])
+  @@index([workspaceId, status, createdAt])
   @@index([createdById])
 }
 
@@ -213,7 +219,10 @@ model MemberRound {
 
   @@unique([roundId, memberId])
   @@index([workspaceId])
+  @@index([workspaceId, status, remainingAmount])
+  @@index([workspaceId, remainingAmount])
   @@index([roundId])
+  @@index([workspaceId, roundId, status, remainingAmount])
   @@index([memberId])
 }
 
@@ -237,7 +246,9 @@ model PaymentTransaction {
   collectedBy     User            @relation("CollectedBy", fields: [collectedById], references: [id])
 
   @@index([workspaceId])
+  @@index([workspaceId, paidAt])
   @@index([memberRoundId])
+  @@index([workspaceId, memberRoundId, paidAt])
   @@index([roundId])
   @@index([memberId])
   @@index([paymentMethodId])
