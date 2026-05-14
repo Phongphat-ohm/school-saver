@@ -9,6 +9,8 @@ import { calculateCurrentMemberRound } from "@/lib/fine";
 import { getDayList } from "@/lib/date";
 import { collectionRoundSchema } from "@/features/rounds/schemas";
 
+const payableStatuses = ["UNPAID", "PARTIAL", "OVERDUE", "PARTIAL_OVERDUE"] as const;
+
 function summarize(memberRounds: Array<{ status: string; targetAmount: number; paidAmount: number; remainingAmount: number }>) {
   return {
     totalMembers: memberRounds.length,
@@ -172,11 +174,28 @@ export async function closeRoundAction(roundId: string) {
     const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
     const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId } });
     if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
+    if (round.status !== "OPEN") return errorResult("ปิดได้เฉพาะรอบที่เปิดอยู่เท่านั้น");
     const updated = await prisma.collectionRound.update({ where: { id: roundId }, data: { status: "CLOSED" } });
     revalidatePath("/rounds");
+    revalidatePath(`/rounds/${roundId}`);
     return successResult(updated, "ปิดรอบสำเร็จ");
   } catch {
     return errorResult("ไม่สามารถปิดรอบได้");
+  }
+}
+
+export async function openRoundAction(roundId: string) {
+  try {
+    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId } });
+    if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
+    if (round.status !== "CLOSED") return errorResult("เปิดกลับได้เฉพาะรอบที่ปิดอยู่เท่านั้น");
+    const updated = await prisma.collectionRound.update({ where: { id: roundId }, data: { status: "OPEN" } });
+    revalidatePath("/rounds");
+    revalidatePath(`/rounds/${roundId}`);
+    return successResult(updated, "เปิดรอบสำเร็จ");
+  } catch {
+    return errorResult("ไม่สามารถเปิดรอบได้");
   }
 }
 
@@ -185,8 +204,19 @@ export async function cancelRoundAction(roundId: string) {
     const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
     const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId } });
     if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
-    const updated = await prisma.collectionRound.update({ where: { id: roundId }, data: { status: "CANCELLED" } });
+    if (round.status === "CANCELLED") return errorResult("รอบนี้ถูกยกเลิกแล้ว");
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.collectionRound.update({ where: { id: roundId }, data: { status: "CANCELLED" } });
+      await tx.memberRound.updateMany({
+        where: { workspaceId, roundId, status: { in: [...payableStatuses] } },
+        data: { status: "WAIVED", remainingAmount: 0, fineAmount: 0 },
+      });
+      return saved;
+    });
     revalidatePath("/rounds");
+    revalidatePath(`/rounds/${roundId}`);
+    revalidatePath("/payments");
+    revalidatePath("/overdue");
     return successResult(updated, "ยกเลิกรอบสำเร็จ");
   } catch {
     return errorResult("ไม่สามารถยกเลิกรอบได้");

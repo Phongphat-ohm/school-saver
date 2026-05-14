@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PasswordStrengthMeter } from "@/components/shared/PasswordStrengthMeter";
 import { registerAction } from "@/features/auth/actions";
 import { closeLoading, showError, showLoading, showSuccess } from "@/lib/swal";
 
@@ -41,9 +42,10 @@ export function RegisterForm() {
       <Input label="ชื่อ" value={form.fullName} onChange={(event) => set("fullName", event.target.value)} autoComplete="name" />
       <Input label="ชื่อผู้ใช้" value={form.username} onChange={(event) => set("username", event.target.value)} autoComplete="username" />
       <Input label="รหัสผ่าน" type="password" value={form.password} onChange={(event) => set("password", event.target.value)} autoComplete="new-password" />
+      <PasswordStrengthMeter password={form.password} />
       <Input label="ยืนยันรหัสผ่าน" type="password" value={form.confirmPassword} onChange={(event) => set("confirmPassword", event.target.value)} autoComplete="new-password" />
       <p className="rounded-2xl bg-blue-50 p-3 text-xs leading-5 text-blue-800">
-        สมัครสมาชิกแล้วจะยังไม่มี workspace โดยอัตโนมัติ คุณสามารถสร้าง workspace เอง หรือขอเข้าร่วม workspace จากลิงก์/QR ที่ผู้ดูแลส่งให้
+        สมัครสมาชิกแล้วยังไม่มี workspace โดยอัตโนมัติ คุณสามารถสร้าง workspace เอง หรือขอเข้าร่วม workspace จากลิงก์/QR ที่ผู้ดูแลส่งให้
       </p>
       <Button disabled={pending} className="w-full gap-2">
         <UserPlus size={18} />สมัครสมาชิก

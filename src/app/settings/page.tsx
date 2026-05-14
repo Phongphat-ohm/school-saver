@@ -1,10 +1,11 @@
-import { LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
+import { LogOut, Settings, ShieldAlert, ShieldCheck, UserRound } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { roleLabels } from "@/constants/roles";
 import { logoutAction } from "@/features/auth/actions";
 import { ChangePasswordForm } from "@/features/settings/components/ChangePasswordForm";
+import { AccountCancellationForm } from "@/features/settings/components/AccountCancellationForm";
 import { MyProfileForm } from "@/features/settings/components/MyProfileForm";
 import { WorkspaceSettingsForm } from "@/features/settings/components/WorkspaceSettingsForm";
 import { getCurrentWorkspaceAction } from "@/features/workspace/actions";
@@ -60,6 +61,14 @@ export default async function SettingsPage() {
             )}
           </Card>
         </div>
+
+        <Card>
+          <div className="mb-4 flex items-center gap-2">
+            <ShieldAlert size={20} className="text-rose-600" />
+            <h3 className="text-lg font-bold text-slate-950">ยกเลิกบัญชีผู้ใช้</h3>
+          </div>
+          <AccountCancellationForm />
+        </Card>
 
         <div className="rounded-[1.5rem] border border-white/70 bg-[#11152e] p-4 shadow-sm text-white">
           <div className="flex flex-wrap items-center justify-between gap-4">

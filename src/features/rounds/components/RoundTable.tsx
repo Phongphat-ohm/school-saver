@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, LockKeyhole } from "lucide-react";
+import { Ban, LockKeyhole, UnlockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { RoundEditButton } from "@/features/rounds/components/RoundEditButton";
-import { cancelRoundAction, closeRoundAction } from "@/features/rounds/actions";
+import { cancelRoundAction, closeRoundAction, openRoundAction } from "@/features/rounds/actions";
 import { formatMoney } from "@/lib/money";
 import { formatThaiDate } from "@/lib/date";
 import { closeLoading, showConfirm, showError, showLoading, showSuccess } from "@/lib/swal";
@@ -52,7 +52,7 @@ export function RoundTable({ rounds }: { rounds: any[] }) {
               <td className="p-3">{formatMoney(round.summary.totalOutstandingAmount)}</td>
               <td className="p-3"><StatusBadge status={round.status} /></td>
               <td className="p-3">
-                <div className="flex justify-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
                   <RoundEditButton round={round} />
                   <Button
                     type="button"
@@ -67,11 +67,22 @@ export function RoundTable({ rounds }: { rounds: any[] }) {
                   </Button>
                   <Button
                     type="button"
+                    variant="secondary"
+                    className="gap-2"
+                    disabled={pending || round.status !== "CLOSED"}
+                    onClick={() => {
+                      startTransition(() => runAction(() => openRoundAction(round.id), "เปิดรอบ", `ต้องการเปิดรอบ ${round.title} กลับมาใช้งานหรือไม่?`));
+                    }}
+                  >
+                    <UnlockKeyhole size={16} />เปิดรอบ
+                  </Button>
+                  <Button
+                    type="button"
                     variant="danger"
                     className="gap-2"
                     disabled={pending || round.status === "CANCELLED"}
                     onClick={() => {
-                      startTransition(() => runAction(() => cancelRoundAction(round.id), "ยกเลิกรอบ", `ต้องการยกเลิกรอบ ${round.title} หรือไม่?`));
+                      startTransition(() => runAction(() => cancelRoundAction(round.id), "ยกเลิกรอบ", `ต้องการยกเลิกรอบ ${round.title} หรือไม่? ยอดค้างของรอบนี้จะไม่แสดงในหน้ารับชำระ`));
                     }}
                   >
                     <Ban size={16} />ยกเลิก

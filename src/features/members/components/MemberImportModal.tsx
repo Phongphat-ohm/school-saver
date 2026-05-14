@@ -25,7 +25,9 @@ type Mapping = Record<(typeof memberFields)[number]["value"], string>;
 
 function readCell(value: unknown) {
   if (value === null || value === undefined) return "";
-  return String(value).trim();
+  const text = String(value).replace(/^\uFEFF/, "").trim();
+  if (/^#{2,}$/.test(text)) return "";
+  return text.startsWith("'") ? text.slice(1).trim() : text;
 }
 
 function guessMapping(headers: string[]): Mapping {
@@ -73,9 +75,9 @@ export function MemberImportModal() {
 
   async function readFile(file: File) {
     const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array" });
+    const workbook = XLSX.read(buffer, { type: "array", raw: false, cellText: true, cellDates: false });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
     const parsedRows = json.map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, readCell(value)])));
     const nextHeaders = parsedRows[0] ? Object.keys(parsedRows[0]) : [];
     applyRows(parsedRows, nextHeaders);

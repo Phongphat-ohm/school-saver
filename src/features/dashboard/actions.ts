@@ -23,7 +23,7 @@ export async function getDashboardSummaryAction() {
       prisma.member.count({ where: { workspaceId, status: "ACTIVE" } }),
       prisma.collectionRound.count({ where: { workspaceId, status: "OPEN" } }),
       prisma.memberRound.aggregate({
-        where: { workspaceId },
+        where: { workspaceId, round: { status: "OPEN" } },
         _sum: {
           targetAmount: true,
           paidAmount: true,
@@ -33,7 +33,7 @@ export async function getDashboardSummaryAction() {
       }),
       prisma.memberRound.groupBy({
         by: ["status"],
-        where: { workspaceId },
+        where: { workspaceId, round: { status: "OPEN" } },
         _count: { _all: true },
       }),
       prisma.paymentTransaction.aggregate({
@@ -61,7 +61,7 @@ export async function getDashboardSummaryAction() {
         orderBy: { createdAt: "desc" },
       }),
       prisma.memberRound.findMany({
-        where: { workspaceId, remainingAmount: { gt: 0 } },
+        where: { workspaceId, remainingAmount: { gt: 0 }, round: { status: "OPEN" } },
         select: {
           id: true,
           remainingAmount: true,

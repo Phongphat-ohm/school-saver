@@ -66,7 +66,7 @@ export async function getMemberReportAction(memberId: string) {
     return successResult({
       member,
       totalPaidAmount: member.paymentTransactions.reduce((sum, row) => sum + row.amount, 0),
-      totalOutstandingAmount: member.memberRounds.reduce((sum, row) => sum + row.remainingAmount, 0),
+      totalOutstandingAmount: member.memberRounds.reduce((sum, row) => sum + (row.round.status === "CANCELLED" ? 0 : row.remainingAmount), 0),
     });
   } catch {
     return errorResult("ไม่สามารถดึงรายงานสมาชิกได้");

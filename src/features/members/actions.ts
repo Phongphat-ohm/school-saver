@@ -17,6 +17,13 @@ function toGoogleSheetCsvUrl(inputUrl: string) {
   return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv&gid=${gid}`;
 }
 
+function normalizeImportText(value: unknown) {
+  if (value === null || value === undefined) return "";
+  const text = String(value).replace(/^\uFEFF/, "").trim();
+  if (/^#{2,}$/.test(text)) return "";
+  return text.startsWith("'") ? text.slice(1).trim() : text;
+}
+
 export async function getMembersAction() {
   try {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
@@ -81,6 +88,24 @@ export async function disableMemberAction(id: string) {
   }
 }
 
+export async function disableMembersAction(ids: string[]) {
+  try {
+    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (uniqueIds.length === 0) return errorResult("กรุณาเลือกสมาชิกที่ต้องการลบ");
+
+    const result = await prisma.member.updateMany({
+      where: { workspaceId, id: { in: uniqueIds }, status: "ACTIVE" },
+      data: { status: "INACTIVE" },
+    });
+
+    revalidatePath("/members");
+    return successResult({ count: result.count }, `ลบสมาชิกสำเร็จ ${result.count} รายการ`);
+  } catch {
+    return errorResult("ไม่สามารถลบสมาชิกที่เลือกได้");
+  }
+}
+
 export async function importMembersAction(data: unknown) {
   try {
     const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
@@ -88,11 +113,11 @@ export async function importMembersAction(data: unknown) {
     if (!parsed.success) return errorResult("ข้อมูล import ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
 
     const normalizedRows = parsed.data.rows.map((row) => ({
-      memberCode: row.memberCode.trim(),
-      studentNo: row.studentNo?.trim() || undefined,
-      fullName: row.fullName.trim(),
-      classroom: row.classroom?.trim() || undefined,
-      phone: row.phone?.trim() || undefined,
+      memberCode: normalizeImportText(row.memberCode),
+      studentNo: normalizeImportText(row.studentNo) || undefined,
+      fullName: normalizeImportText(row.fullName),
+      classroom: normalizeImportText(row.classroom) || undefined,
+      phone: normalizeImportText(row.phone) || undefined,
     }));
 
     const duplicatedInFile = normalizedRows
@@ -142,10 +167,10 @@ export async function fetchGoogleSheetRowsAction(data: unknown) {
       return errorResult("Google Sheet นี้ยังไม่เปิดให้เข้าถึงเป็น CSV กรุณาตั้งค่าแชร์หรือ Publish ก่อน");
     }
 
-    const workbook = XLSX.read(csv, { type: "string" });
+    const workbook = XLSX.read(csv, { type: "string", raw: false, cellText: true, cellDates: false });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" }).map((row) =>
-      Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value === null || value === undefined ? "" : String(value).trim()])),
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false }).map((row) =>
+      Object.fromEntries(Object.entries(row).map(([key, value]) => [normalizeImportText(key), normalizeImportText(value)])),
     );
 
     if (rows.length === 0) return errorResult("ไม่พบข้อมูลใน Google Sheet");

@@ -98,7 +98,7 @@ export function RoundMemberList({
                 key={row.id}
                 row={{ ...row, round: rowRound }}
                 paymentMethods={paymentMethods}
-                canPay={rowRound?.status === "OPEN" && paymentMethods.length > 0}
+                canPay={(rowRound?.status === "OPEN" || (round && rowRound?.status === "CLOSED")) && paymentMethods.length > 0}
                 compact
               />
             );

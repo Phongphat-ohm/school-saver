@@ -26,3 +26,11 @@ export const changeMyPasswordSchema = z
     message: "รหัสผ่านใหม่และยืนยันรหัสผ่านไม่ตรงกัน",
     path: ["confirmPassword"],
   });
+
+export const cancelMyAccountSchema = z.object({
+  password: z.string().min(1, "กรุณากรอกรหัสผ่านเพื่อยืนยัน"),
+  confirmText: z.string().trim(),
+}).refine((data) => data.confirmText === "ยกเลิกบัญชี", {
+  message: "กรุณาพิมพ์คำว่า ยกเลิกบัญชี เพื่อยืนยัน",
+  path: ["confirmText"],
+});

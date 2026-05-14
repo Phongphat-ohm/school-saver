@@ -87,7 +87,10 @@ export async function getCurrentUserAction() {
       where: { id: session.userId, status: "ACTIVE" },
       select: { id: true, username: true, fullName: true, status: true },
     });
-    if (!user) return errorResult("ไม่พบผู้ใช้");
+    if (!user) {
+      await destroySession();
+      return errorResult("ไม่พบผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
+    }
     return successResult(user);
   } catch {
     return errorResult("ไม่สามารถดึงข้อมูลผู้ใช้ได้");

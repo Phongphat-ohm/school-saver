@@ -2,14 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Edit3, UserX } from "lucide-react";
+import { Edit3, Trash2 } from "lucide-react";
 import type { WorkspaceRole } from "@/generated/prisma/client";
 import { roleLabels, roleOptions } from "@/constants/roles";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { disableWorkspaceUserAction, updateWorkspaceUserRoleAction } from "@/features/users/actions";
+import { deleteWorkspaceUserAction, updateWorkspaceUserRoleAction } from "@/features/users/actions";
 import { closeLoading, showConfirm, showError, showLoading, showSuccess } from "@/lib/swal";
 
 export function UserTable({ users, actorRole }: { users: any[]; actorRole?: WorkspaceRole | null }) {
@@ -18,6 +18,23 @@ export function UserTable({ users, actorRole }: { users: any[]; actorRole?: Work
   const [editing, setEditing] = useState<any | null>(null);
   const [role, setRole] = useState("VIEWER");
   const visibleRoleOptions = actorRole === "ADMIN" ? roleOptions.filter((option) => option.value !== "OWNER") : roleOptions;
+
+  function deleteUser(item: any) {
+    startTransition(async () => {
+      const confirmed = await showConfirm(
+        "ลบผู้ใช้",
+        `ต้องการลบ ${item.user.fullName} ออกจาก workspace นี้หรือไม่? ถ้าผู้ใช้นี้ไม่มี workspace อื่น ระบบจะปิดบัญชีให้ด้วย`,
+      );
+      if (!confirmed) return;
+      showLoading("กำลังลบผู้ใช้");
+      const result = await deleteWorkspaceUserAction(item.id);
+      closeLoading();
+      if (result.success) {
+        await showSuccess(result.message ?? "ลบผู้ใช้แล้ว");
+        router.refresh();
+      } else await showError(result.message);
+    });
+  }
 
   return (
     <>
@@ -46,21 +63,10 @@ export function UserTable({ users, actorRole }: { users: any[]; actorRole?: Work
                 type="button"
                 variant="danger"
                 className="gap-2"
-                disabled={item.status === "INACTIVE" || (actorRole === "ADMIN" && item.role === "OWNER")}
-                onClick={() => {
-                  startTransition(async () => {
-                    if (!(await showConfirm("ปิดใช้งานผู้ใช้", `ต้องการปิดใช้งาน ${item.user.fullName} ใน workspace นี้หรือไม่?`))) return;
-                    showLoading();
-                    const result = await disableWorkspaceUserAction(item.id);
-                    closeLoading();
-                    if (result.success) {
-                      await showSuccess(result.message ?? "ปิดใช้งานแล้ว");
-                      router.refresh();
-                    } else await showError(result.message);
-                  });
-                }}
+                disabled={pending || item.status === "INACTIVE" || (actorRole === "ADMIN" && item.role === "OWNER")}
+                onClick={() => deleteUser(item)}
               >
-                <UserX size={16} />ปิดใช้งาน
+                <Trash2 size={16} />ลบผู้ใช้
               </Button>
             </div>
           </div>
