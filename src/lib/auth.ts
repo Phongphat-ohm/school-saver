@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
 
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async function getCurrentUser() {
   const session = await getSession();
   if (!session) return null;
   const user = await prisma.user.findFirst({
@@ -12,7 +13,7 @@ export async function getCurrentUser() {
   });
   if (!user) return null;
   return user;
-}
+});
 
 export async function requireUser() {
   const user = await getCurrentUser();

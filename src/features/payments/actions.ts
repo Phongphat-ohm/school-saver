@@ -52,7 +52,18 @@ export async function searchMembersForPaymentAction(keyword = "") {
             completedAt: true,
             createdAt: true,
             updatedAt: true,
-            round: true,
+            round: {
+              select: {
+                id: true,
+                title: true,
+                dueDate: true,
+                fineEnabled: true,
+                fineType: true,
+                fineAmount: true,
+                fineMaxAmount: true,
+                status: true,
+              },
+            },
           },
           orderBy: { createdAt: "desc" },
         },
@@ -85,7 +96,10 @@ export async function payMemberRoundAction(data: unknown) {
     const result = await prisma.$transaction(async (tx) => {
       const memberRound = await tx.memberRound.findFirst({
         where: { id: parsed.data.memberRoundId, workspaceId },
-        include: { round: true, member: true },
+        include: {
+          round: true,
+          member: { select: { id: true, fullName: true } },
+        },
       });
       if (!memberRound) throw new Error("ไม่พบรายการสมาชิกในรอบนี้");
       if (memberRound.round.status === "CANCELLED") throw new Error("รอบนี้ถูกยกเลิกแล้ว ไม่สามารถรับชำระได้");
@@ -152,6 +166,87 @@ export async function payMemberRoundAction(data: unknown) {
   }
 }
 
+export async function cancelPaymentTransactionAction(transactionId: string) {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(COLLECT_PAYMENT);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const transaction = await tx.paymentTransaction.findFirst({
+        where: { id: transactionId, workspaceId },
+        include: {
+          member: { select: { fullName: true } },
+          memberRound: {
+            include: {
+              round: true,
+            },
+          },
+        },
+      });
+
+      if (!transaction) throw new Error("ไม่พบรายการรับเงินในพื้นที่ทำงานนี้");
+      if (transaction.memberRound.round.status === "CANCELLED") {
+        throw new Error("รอบชำระเงินนี้ถูกยกเลิกแล้ว ไม่สามารถยกเลิกรายการรับเงินได้");
+      }
+
+      await tx.paymentTransaction.delete({ where: { id: transaction.id } });
+
+      const [remainingTotals, lastTransaction] = await Promise.all([
+        tx.paymentTransaction.aggregate({
+          where: { workspaceId, memberRoundId: transaction.memberRoundId },
+          _sum: { amount: true },
+        }),
+        tx.paymentTransaction.findFirst({
+          where: { workspaceId, memberRoundId: transaction.memberRoundId },
+          select: { paidAt: true },
+          orderBy: { paidAt: "desc" },
+        }),
+      ]);
+
+      const paidAmount = remainingTotals._sum.amount ?? 0;
+      const recalculationBase = {
+        paidAmount,
+        targetAmount: transaction.memberRound.targetAmount,
+        fineAmount: 0,
+        status: paidAmount > 0 ? ("PARTIAL" as const) : ("UNPAID" as const),
+      };
+      const current = calculateCurrentMemberRound(recalculationBase, transaction.memberRound.round, new Date());
+      const completed = current.outstandingAmount <= 0;
+
+      const updated = await tx.memberRound.update({
+        where: { id: transaction.memberRoundId },
+        data: {
+          paidAmount,
+          fineAmount: current.currentFine,
+          totalRequiredAmount: current.totalRequiredAmount,
+          remainingAmount: current.outstandingAmount,
+          status: current.currentStatus,
+          completedAt: completed ? (lastTransaction?.paidAt ?? new Date()) : null,
+        },
+      });
+
+      await tx.activityLog.create({
+        data: {
+          workspaceId,
+          userId,
+          action: "CANCEL_PAYMENT",
+          detail: `ยกเลิกรับเงิน ${transaction.member.fullName} จำนวน ${transaction.amount}`,
+        },
+      });
+
+      return { transaction, memberRound: updated };
+    });
+
+    revalidatePath("/");
+    revalidatePath("/payments");
+    revalidatePath("/rounds");
+    revalidatePath(`/rounds/${result.memberRound.roundId}`);
+    revalidatePath("/reports");
+    return successResult(result, "ยกเลิกรายการรับเงินสำเร็จ");
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถยกเลิกรายการรับเงินได้");
+  }
+}
+
 export async function waiveMemberRoundAction(memberRoundId: string, note?: string) {
   try {
     const { workspaceId, userId } = await requireWorkspaceRole(COLLECT_PAYMENT);
@@ -172,11 +267,18 @@ export async function waiveMemberRoundAction(memberRoundId: string, note?: strin
 export async function getMemberRoundTransactionsAction(memberRoundId: string) {
   try {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
-    const exists = await prisma.memberRound.findFirst({ where: { id: memberRoundId, workspaceId } });
+    const exists = await prisma.memberRound.findFirst({ where: { id: memberRoundId, workspaceId }, select: { id: true } });
     if (!exists) return errorResult("ไม่พบรายการใน workspace นี้");
     const transactions = await prisma.paymentTransaction.findMany({
       where: { workspaceId, memberRoundId },
-      include: { paymentMethod: true, collectedBy: { select: { fullName: true, username: true } } },
+      select: {
+        id: true,
+        amount: true,
+        paidAt: true,
+        note: true,
+        paymentMethod: { select: { id: true, name: true, type: true } },
+        collectedBy: { select: { id: true, fullName: true, username: true } },
+      },
       orderBy: { paidAt: "desc" },
     });
     return successResult(transactions);
@@ -204,8 +306,29 @@ export async function getUnpaidAndPartialPaymentsAction(roundId?: string) {
         completedAt: true,
         createdAt: true,
         updatedAt: true,
-        member: true,
-        round: true,
+        member: {
+          select: {
+            id: true,
+            memberCode: true,
+            studentNo: true,
+            fullName: true,
+            classroom: true,
+            phone: true,
+            status: true,
+          },
+        },
+        round: {
+          select: {
+            id: true,
+            title: true,
+            dueDate: true,
+            fineEnabled: true,
+            fineType: true,
+            fineAmount: true,
+            fineMaxAmount: true,
+            status: true,
+          },
+        },
       },
       orderBy: { remainingAmount: "desc" },
     });

@@ -4,9 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { QrCode, Search, SlidersHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { MemberPaymentQrScanner } from "@/features/payments/components/MemberPaymentQrScanner";
 import { PaymentCard } from "@/features/payments/components/PaymentCard";
+import { PaymentForm } from "@/features/payments/components/PaymentForm";
+import { showError } from "@/lib/swal";
 
 const statusOptions = [
   { label: "ทุกสถานะ", value: "ALL" },
@@ -45,14 +48,39 @@ export function RoundMemberList({
   const [keyword, setKeyword] = useState(initialKeyword);
   const [status, setStatus] = useState("ALL");
   const [payState, setPayState] = useState("ALL");
+  const [scannedPaymentRow, setScannedPaymentRow] = useState<any | null>(null);
 
   useEffect(() => {
     setKeyword(initialKeyword);
   }, [initialKeyword]);
 
   function applyScannedMember(memberCode: string) {
+    const normalizedMemberCode = memberCode.trim().toLowerCase();
+    const matchedRows = memberRounds.filter((row) => row.member?.memberCode?.trim().toLowerCase() === normalizedMemberCode);
+    const payableRow = matchedRows.find((row) => {
+      const rowRound = round ?? row.round;
+      const outstandingAmount = row.current?.outstandingAmount ?? row.remainingAmount ?? 0;
+      return (
+        outstandingAmount > 0 &&
+        paymentMethods.length > 0 &&
+        (rowRound?.status === "OPEN" || (round && rowRound?.status === "CLOSED"))
+      );
+    });
+
     setKeyword(memberCode);
     setPayState("OUTSTANDING");
+
+    if (!matchedRows.length) {
+      showError("ไม่พบสมาชิกจาก QR นี้ในรายการค้างชำระของ Workspace ปัจจุบัน");
+      return;
+    }
+
+    if (!payableRow) {
+      showError(paymentMethods.length ? "สมาชิกคนนี้ไม่มีรายการค้างชำระที่รับเงินได้" : "กรุณาเพิ่มวิธีชำระเงินก่อนรับเงิน");
+      return;
+    }
+
+    setScannedPaymentRow({ ...payableRow, round: round ?? payableRow.round });
   }
 
   const rows = useMemo(() => {
@@ -134,6 +162,21 @@ export function RoundMemberList({
       ) : (
         <EmptyState title="ไม่พบสมาชิกตามเงื่อนไขที่เลือก" />
       )}
+
+      <Modal
+        title={`รับชำระเงิน${scannedPaymentRow?.member?.fullName ? ` - ${scannedPaymentRow.member.fullName}` : ""}`}
+        open={!!scannedPaymentRow}
+        onClose={() => setScannedPaymentRow(null)}
+      >
+        {scannedPaymentRow ? (
+          <PaymentForm
+            memberRoundId={scannedPaymentRow.id}
+            outstandingAmount={scannedPaymentRow.current?.outstandingAmount ?? scannedPaymentRow.remainingAmount ?? 0}
+            paymentMethods={paymentMethods}
+            onSuccess={() => setScannedPaymentRow(null)}
+          />
+        ) : null}
+      </Modal>
     </section>
   );
 }

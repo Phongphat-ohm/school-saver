@@ -11,13 +11,27 @@ import { collectionRoundSchema } from "@/features/rounds/schemas";
 
 const payableStatuses = ["UNPAID", "PARTIAL", "OVERDUE", "PARTIAL_OVERDUE"] as const;
 
-function summarize(memberRounds: Array<{ status: string; targetAmount: number; paidAmount: number; remainingAmount: number }>) {
+type SummaryInput = {
+  status: string;
+  targetAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  count?: number;
+};
+
+function summarize(memberRounds: SummaryInput[]) {
   return {
-    totalMembers: memberRounds.length,
-    paidCount: memberRounds.filter((item) => item.status === "PAID" || item.status === "LATE_PAID").length,
-    partialCount: memberRounds.filter((item) => item.status === "PARTIAL" || item.status === "PARTIAL_OVERDUE").length,
-    unpaidCount: memberRounds.filter((item) => item.status === "UNPAID").length,
-    overdueCount: memberRounds.filter((item) => item.status === "OVERDUE" || item.status === "PARTIAL_OVERDUE").length,
+    totalMembers: memberRounds.reduce((sum, item) => sum + (item.count ?? 1), 0),
+    paidCount: memberRounds
+      .filter((item) => item.status === "PAID" || item.status === "LATE_PAID")
+      .reduce((sum, item) => sum + (item.count ?? 1), 0),
+    partialCount: memberRounds
+      .filter((item) => item.status === "PARTIAL" || item.status === "PARTIAL_OVERDUE")
+      .reduce((sum, item) => sum + (item.count ?? 1), 0),
+    unpaidCount: memberRounds.filter((item) => item.status === "UNPAID").reduce((sum, item) => sum + (item.count ?? 1), 0),
+    overdueCount: memberRounds
+      .filter((item) => item.status === "OVERDUE" || item.status === "PARTIAL_OVERDUE")
+      .reduce((sum, item) => sum + (item.count ?? 1), 0),
     totalTargetAmount: memberRounds.reduce((sum, item) => sum + item.targetAmount, 0),
     totalPaidAmount: memberRounds.reduce((sum, item) => sum + item.paidAmount, 0),
     totalOutstandingAmount: memberRounds.reduce((sum, item) => sum + item.remainingAmount, 0),
@@ -29,7 +43,7 @@ export async function createCollectionRoundAction(data: unknown) {
     const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = collectionRoundSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลรอบไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
-    const members = await prisma.member.findMany({ where: { workspaceId, status: "ACTIVE" } });
+    const members = await prisma.member.findMany({ where: { workspaceId, status: "ACTIVE" }, select: { id: true } });
     if (members.length === 0) return errorResult("ไม่สามารถสร้างรอบได้ เพราะยังไม่มีสมาชิก ACTIVE ใน workspace นี้");
 
     const round = await prisma.$transaction(async (tx) => {
@@ -68,11 +82,16 @@ export async function updateCollectionRoundAction(roundId: string, data: unknown
     if (!parsed.success) return errorResult("ข้อมูลรอบไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const round = await prisma.collectionRound.findFirst({
       where: { id: roundId, workspaceId },
-      include: { memberRounds: true, paymentTransactions: true },
+      select: {
+        id: true,
+        targetAmount: true,
+        status: true,
+        _count: { select: { paymentTransactions: true } },
+      },
     });
     if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
     if (round.status === "CANCELLED" || round.status === "CLOSED") return errorResult("รอบนี้ปิดหรือยกเลิกแล้ว ไม่สามารถแก้ไขได้");
-    const hasPayments = round.paymentTransactions.length > 0;
+    const hasPayments = round._count.paymentTransactions > 0;
     if (hasPayments && parsed.data.targetAmount !== round.targetAmount) {
       return errorResult("รอบนี้มีรายการรับเงินแล้ว จึงไม่สามารถแก้ไขยอดเป้าหมายต่อคนได้");
     }
@@ -117,21 +136,50 @@ export async function updateCollectionRoundAction(roundId: string, data: unknown
 export async function getCollectionRoundsAction() {
   try {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
-    const rounds = await prisma.collectionRound.findMany({
-      where: { workspaceId },
-      include: {
-        memberRounds: {
-          select: {
-            status: true,
-            targetAmount: true,
-            paidAmount: true,
-            remainingAmount: true,
-          },
+    const [rounds, memberRoundSummaries] = await Promise.all([
+      prisma.collectionRound.findMany({
+        where: { workspaceId },
+        select: {
+          id: true,
+          workspaceId: true,
+          title: true,
+          description: true,
+          targetAmount: true,
+          startDate: true,
+          dueDate: true,
+          fineEnabled: true,
+          fineType: true,
+          fineAmount: true,
+          fineMaxAmount: true,
+          status: true,
+          createdById: true,
+          createdAt: true,
+          updatedAt: true,
         },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    return successResult(rounds.map((round) => ({ ...round, summary: summarize(round.memberRounds) })));
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.memberRound.groupBy({
+        by: ["roundId", "status"],
+        where: { workspaceId },
+        _count: { _all: true },
+        _sum: { targetAmount: true, paidAmount: true, remainingAmount: true },
+      }),
+    ]);
+
+    const summaryByRoundId = new Map<string, SummaryInput[]>();
+    for (const row of memberRoundSummaries) {
+      const items = summaryByRoundId.get(row.roundId) ?? [];
+      items.push({
+        status: row.status,
+        count: row._count._all,
+        targetAmount: row._sum.targetAmount ?? 0,
+        paidAmount: row._sum.paidAmount ?? 0,
+        remainingAmount: row._sum.remainingAmount ?? 0,
+      });
+      summaryByRoundId.set(row.roundId, items);
+    }
+
+    return successResult(rounds.map((round) => ({ ...round, summary: summarize(summaryByRoundId.get(round.id) ?? []) })));
   } catch {
     return errorResult("ไม่สามารถดึงรอบเก็บเงินได้");
   }
@@ -142,9 +190,49 @@ export async function getRoundDetailAction(roundId: string) {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
     const round = await prisma.collectionRound.findFirst({
       where: { id: roundId, workspaceId },
-      include: {
+      select: {
+        id: true,
+        workspaceId: true,
+        title: true,
+        description: true,
+        targetAmount: true,
+        startDate: true,
+        dueDate: true,
+        fineEnabled: true,
+        fineType: true,
+        fineAmount: true,
+        fineMaxAmount: true,
+        status: true,
+        createdById: true,
+        createdAt: true,
+        updatedAt: true,
         memberRounds: {
-          include: { member: true },
+          select: {
+            id: true,
+            workspaceId: true,
+            roundId: true,
+            memberId: true,
+            targetAmount: true,
+            paidAmount: true,
+            remainingAmount: true,
+            fineAmount: true,
+            totalRequiredAmount: true,
+            status: true,
+            completedAt: true,
+            createdAt: true,
+            updatedAt: true,
+            member: {
+              select: {
+                id: true,
+                memberCode: true,
+                studentNo: true,
+                fullName: true,
+                classroom: true,
+                phone: true,
+                status: true,
+              },
+            },
+          },
           orderBy: { member: { studentNo: "asc" } },
         },
       },
@@ -172,7 +260,7 @@ export async function getRoundDetailAction(roundId: string) {
 export async function closeRoundAction(roundId: string) {
   try {
     const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
-    const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId } });
+    const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId }, select: { id: true, status: true } });
     if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
     if (round.status !== "OPEN") return errorResult("ปิดได้เฉพาะรอบที่เปิดอยู่เท่านั้น");
     const updated = await prisma.collectionRound.update({ where: { id: roundId }, data: { status: "CLOSED" } });
@@ -187,7 +275,7 @@ export async function closeRoundAction(roundId: string) {
 export async function openRoundAction(roundId: string) {
   try {
     const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
-    const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId } });
+    const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId }, select: { id: true, status: true } });
     if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
     if (round.status !== "CLOSED") return errorResult("เปิดกลับได้เฉพาะรอบที่ปิดอยู่เท่านั้น");
     const updated = await prisma.collectionRound.update({ where: { id: roundId }, data: { status: "OPEN" } });
@@ -202,7 +290,7 @@ export async function openRoundAction(roundId: string) {
 export async function cancelRoundAction(roundId: string) {
   try {
     const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
-    const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId } });
+    const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId }, select: { id: true, status: true } });
     if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
     if (round.status === "CANCELLED") return errorResult("รอบนี้ถูกยกเลิกแล้ว");
     const updated = await prisma.$transaction(async (tx) => {
@@ -220,5 +308,63 @@ export async function cancelRoundAction(roundId: string) {
     return successResult(updated, "ยกเลิกรอบสำเร็จ");
   } catch {
     return errorResult("ไม่สามารถยกเลิกรอบได้");
+  }
+}
+
+export async function restoreCancelledRoundAction(roundId: string) {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const round = await prisma.collectionRound.findFirst({
+      where: { id: roundId, workspaceId },
+      include: { memberRounds: true },
+    });
+    if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
+    if (round.status !== "CANCELLED") return errorResult("คืนรอบได้เฉพาะรอบที่ถูกยกเลิกแล้วเท่านั้น");
+
+    const today = new Date();
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.collectionRound.update({ where: { id: roundId }, data: { status: "OPEN" } });
+      const cancelledMemberRounds = round.memberRounds.filter(
+        (memberRound) => memberRound.status === "WAIVED" && memberRound.updatedAt >= round.updatedAt,
+      );
+
+      await Promise.all(
+        cancelledMemberRounds.map((memberRound) => {
+          const current = calculateCurrentMemberRound(
+            {
+              ...memberRound,
+              fineAmount: 0,
+              status: memberRound.paidAmount > 0 ? "PARTIAL" : "UNPAID",
+            },
+            round,
+            today,
+          );
+          return tx.memberRound.update({
+            where: { id: memberRound.id },
+            data: {
+              fineAmount: current.currentFine,
+              remainingAmount: current.outstandingAmount,
+              totalRequiredAmount: current.totalRequiredAmount,
+              status: current.currentStatus,
+              completedAt: null,
+            },
+          });
+        }),
+      );
+
+      await tx.activityLog.create({
+        data: { workspaceId, userId, action: "RESTORE_CANCELLED_ROUND", detail: `คืนรอบที่ถูกยกเลิก ${round.title}` },
+      });
+
+      return saved;
+    });
+
+    revalidatePath("/rounds");
+    revalidatePath(`/rounds/${roundId}`);
+    revalidatePath("/payments");
+    revalidatePath("/overdue");
+    return successResult(updated, "ยกเลิกการยกเลิกรอบสำเร็จ");
+  } catch {
+    return errorResult("ไม่สามารถยกเลิกการยกเลิกรอบได้");
   }
 }

@@ -1,24 +1,23 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { RoleGate } from "@/components/layout/RoleGate";
-import { Card } from "@/components/ui/Card";
-import { DailyReport } from "@/features/reports/components/DailyReport";
-import { getDailyReportAction } from "@/features/reports/actions";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ReportDashboard } from "@/features/reports/components/ReportDashboard";
+import { getReportDashboardAction } from "@/features/reports/actions";
 
-export default async function ReportsPage() {
-  const daily = await getDailyReportAction(new Date());
+function parseDate(value?: string) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+  const { from, to } = await searchParams;
+  const report = await getReportDashboardAction(parseDate(from), parseDate(to));
+
   return (
     <AppLayout>
       <RoleGate allowedRoles={["OWNER", "ADMIN", "COLLECTOR", "VIEWER"]}>
-        <div className="grid gap-5">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-950">รายงาน</h2>
-          <p className="text-sm text-slate-500">รายงานทั้งหมดคำนวณจาก workspace ปัจจุบันเท่านั้น</p>
-        </div>
-        <Card>
-          <h3 className="mb-4 text-lg font-bold">รายงานรายวัน</h3>
-          {daily.success ? <DailyReport report={daily.data} /> : <p>{daily.message}</p>}
-        </Card>
-        </div>
+        {report.success ? <ReportDashboard report={report.data} /> : <EmptyState title={report.message} />}
       </RoleGate>
     </AppLayout>
   );

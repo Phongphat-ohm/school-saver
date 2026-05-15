@@ -1,4 +1,5 @@
-﻿import type { WorkspaceRole } from "@/generated/prisma/client";
+import type { WorkspaceRole } from "@/generated/prisma/client";
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 
@@ -6,21 +7,21 @@ const writeRoles: WorkspaceRole[] = ["OWNER", "ADMIN"];
 const collectRoles: WorkspaceRole[] = ["OWNER", "ADMIN", "COLLECTOR"];
 const reportRoles: WorkspaceRole[] = ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"];
 
-export async function getWorkspaceRole(userId: string, workspaceId: string) {
+export const getWorkspaceRole = cache(async function getWorkspaceRole(userId: string, workspaceId: string) {
   const membership = await prisma.workspaceMember.findFirst({
     where: { userId, workspaceId, status: "ACTIVE" },
     select: { role: true },
   });
   return membership?.role ?? null;
-}
+});
 
 export async function requireWorkspaceRole(allowedRoles: WorkspaceRole[]) {
   const session = await getSession();
-  if (!session) throw new Error("เธเธฃเธธเธ“เธฒเน€เธเนเธฒเธชเธนเนเธฃเธฐเธเธ");
+  if (!session) throw new Error("กรุณาเข้าสู่ระบบ");
   if (!session.currentWorkspaceId) throw new Error("ยังไม่มี workspace ที่ใช้งานอยู่");
   const role = await getWorkspaceRole(session.userId, session.currentWorkspaceId);
   if (!role || !allowedRoles.includes(role)) {
-    throw new Error("เธเธธเธ“เนเธกเนเธกเธตเธชเธดเธ—เธเธดเนเธ—เธณเธฃเธฒเธขเธเธฒเธฃเธเธตเน");
+    throw new Error("คุณไม่มีสิทธิ์ทำรายการนี้");
   }
   return { userId: session.userId, workspaceId: session.currentWorkspaceId, role };
 }

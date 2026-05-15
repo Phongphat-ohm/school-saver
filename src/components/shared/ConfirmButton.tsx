@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
+import { useActionLock } from "@/hooks/useActionLock";
 import { showConfirm, showError, showLoading, showSuccess, closeLoading } from "@/lib/swal";
 import type { ActionResult } from "@/types/action-result";
 
@@ -17,20 +18,29 @@ export function ConfirmButton({
   children: string;
   variant?: "primary" | "secondary" | "danger" | "ghost";
 }) {
+  const actionLock = useActionLock();
+
   return (
     <Button
       type="button"
       variant={variant}
+      disabled={actionLock.locked}
       onClick={async () => {
-        if (!(await showConfirm(title, text))) return;
-        showLoading();
-        const result = await action();
-        closeLoading();
-        if (result.success) await showSuccess(result.message ?? "ดำเนินการสำเร็จ");
-        else await showError(result.message);
+        if (!actionLock.acquire()) return;
+        try {
+          if (!(await showConfirm(title, text))) return;
+          showLoading();
+          const result = await action();
+          closeLoading();
+          if (result.success) await showSuccess(result.message ?? "ดำเนินการสำเร็จ");
+          else await showError(result.message);
+        } finally {
+          closeLoading();
+          actionLock.release();
+        }
       }}
     >
-      {children}
+      {actionLock.locked ? "กำลังดำเนินการ..." : children}
     </Button>
   );
 }

@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 const COOKIE_NAME = "school_saver_session";
 const MAX_AGE = 60 * 60 * 24 * 30;
@@ -39,10 +40,10 @@ export async function createSession(userId: string, workspaceId: string | null) 
   });
 }
 
-export async function getSession() {
+export const getSession = cache(async function getSession() {
   const cookieStore = await cookies();
   return decodeSession(cookieStore.get(COOKIE_NAME)?.value);
-}
+});
 
 export async function destroySession() {
   const cookieStore = await cookies();
