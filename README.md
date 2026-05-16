@@ -1,36 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# School Saver
 
-## Getting Started
+ระบบจัดการการออม/รอบชำระเงินสำหรับโรงเรียน สร้างด้วย Next.js, Prisma และ PostgreSQL
 
-First, run the development server:
+## Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+เปิดใช้งานที่ `http://localhost:3000`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Docker
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+คัดลอกไฟล์ env ตัวอย่างก่อนรันด้วย Docker Compose:
 
-## Learn More
+```bash
+cp .env.docker.example .env.docker
+docker compose --env-file .env.docker up -d --build
+```
 
-To learn more about Next.js, take a look at the following resources:
+คำสั่งนี้จะสร้าง 3 service:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `db` PostgreSQL 16
+- `migrate` รัน `prisma migrate deploy`
+- `app` Next.js production server ที่ port `3000`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+หลังรันสำเร็จ:
 
-## Deploy on Vercel
+- แอปเปิดที่ `http://localhost:3000`
+- PostgreSQL เปิดที่ `localhost:5432` หรือค่าที่ตั้งใน `POSTGRES_PORT`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+ดูสถานะ service:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+docker compose --env-file .env.docker ps
+```
+
+ดู log:
+
+```bash
+docker compose --env-file .env.docker logs -f app
+```
+
+หยุดระบบ:
+
+```bash
+docker compose --env-file .env.docker down
+```
+
+Build เฉพาะ application image:
+
+```bash
+docker build --target runner -t school-saver:local .
+```
+
+Build เฉพาะ migration image:
+
+```bash
+docker build --target migrator -t school-saver:migrator .
+```
+
+รัน migration ไปยังฐานข้อมูลภายนอก:
+
+```bash
+docker run --rm -e DATABASE_URL="postgresql://user:pass@host:5432/school_saver?schema=public" school-saver:migrator
+```
+
+## Jenkins
+
+โปรเจกต์นี้มี `Jenkinsfile` สำหรับ pipeline มาตรฐาน:
+
+1. `npm ci`
+2. `npm run typecheck`
+3. Build Docker image target `runner`
+4. Build Docker image target `migrator`
+5. รัน `prisma migrate deploy` จาก migration image
+6. Push image ไป registry ถ้าเปิด `PUSH_IMAGE`
+7. Deploy ด้วย Docker Compose ถ้าเปิด `DEPLOY_COMPOSE`
+
+ตั้งค่า credentials ใน Jenkins:
+
+- `school-saver-database-url` เป็น Secret text เก็บค่า production `DATABASE_URL`
+- `docker-registry` เป็น Username/Password สำหรับ Docker registry ถ้าต้อง push image
+
+ค่าที่มักปรับตอนรัน pipeline:
+
+- `DOCKER_IMAGE`: เช่น `registry.example.com/team/school-saver`
+- `DOCKER_REGISTRY`: เช่น `registry.example.com`
+- `DOCKER_NETWORK`: ใส่ชื่อ Docker network ถ้า migration container ต้องต่อเข้า database network เดิม
+- `RUN_MIGRATIONS`: เปิดเพื่อ deploy migration ก่อนปล่อยแอป
+- `PUSH_IMAGE`: เปิดเมื่อ Jenkins ต้อง push image
+- `DEPLOY_COMPOSE`: เปิดเมื่อ Jenkins agent เป็นเครื่อง deploy ด้วย `docker compose`

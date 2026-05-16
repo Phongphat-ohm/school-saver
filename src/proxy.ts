@@ -38,8 +38,9 @@ export default function proxy(request: NextRequest) {
 
   const isLogin = pathname === "/login";
   const isRegister = pathname === "/register";
+  const isPublicLegal = pathname === "/terms" || pathname === "/privacy";
 
-  if (!session && !isLogin && !isRegister) {
+  if (!session && !isLogin && !isRegister && !isPublicLegal) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

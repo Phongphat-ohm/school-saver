@@ -1,5 +1,6 @@
 import type { WorkspaceRole } from "@/generated/prisma/client";
 import { cache } from "react";
+import { hasAcceptedCurrentLegal } from "@/constants/legal";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 
@@ -18,6 +19,11 @@ export const getWorkspaceRole = cache(async function getWorkspaceRole(userId: st
 export async function requireWorkspaceRole(allowedRoles: WorkspaceRole[]) {
   const session = await getSession();
   if (!session) throw new Error("กรุณาเข้าสู่ระบบ");
+  const user = await prisma.user.findFirst({
+    where: { id: session.userId, status: "ACTIVE" },
+    select: { termsAcceptedAt: true, termsVersion: true, privacyAcceptedAt: true, privacyVersion: true },
+  });
+  if (!user || !hasAcceptedCurrentLegal(user)) throw new Error("กรุณายอมรับเงื่อนไขและนโยบายความเป็นส่วนตัวก่อนใช้งาน");
   if (!session.currentWorkspaceId) throw new Error("ยังไม่มี workspace ที่ใช้งานอยู่");
   const role = await getWorkspaceRole(session.userId, session.currentWorkspaceId);
   if (!role || !allowedRoles.includes(role)) {

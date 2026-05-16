@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { hasAcceptedCurrentLegal } from "@/constants/legal";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
@@ -9,15 +10,26 @@ export const getCurrentUser = cache(async function getCurrentUser() {
   if (!session) return null;
   const user = await prisma.user.findFirst({
     where: { id: session.userId, status: "ACTIVE" },
-    select: { id: true, username: true, fullName: true, status: true },
+    select: {
+      id: true,
+      username: true,
+      fullName: true,
+      status: true,
+      termsAcceptedAt: true,
+      termsVersion: true,
+      privacyAcceptedAt: true,
+      privacyVersion: true,
+    },
   });
   if (!user) return null;
   return user;
 });
 
-export async function requireUser() {
+export async function requireUser(options: { requireLegal?: boolean } = {}) {
+  const requireLegal = options.requireLegal ?? true;
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (requireLegal && !hasAcceptedCurrentLegal(user)) redirect("/legal/consent");
   return user;
 }
 

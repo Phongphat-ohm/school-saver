@@ -82,6 +82,10 @@ model User {
   passwordHash          String
   fullName              String
   status                UserStatus           @default(ACTIVE)
+  termsAcceptedAt       DateTime?
+  termsVersion          String?
+  privacyAcceptedAt     DateTime?
+  privacyVersion        String?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   ownedWorkspaces       Workspace[]          @relation("WorkspaceOwner")

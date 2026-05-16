@@ -6,6 +6,7 @@ import { createSession, destroySession, getSession } from "@/lib/session";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { errorResult, successResult } from "@/lib/result";
 import { loginSchema, registerSchema } from "@/features/auth/schemas";
+import { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION } from "@/constants/legal";
 
 export async function loginAction(username: string, password: string) {
   try {
@@ -52,6 +53,10 @@ export async function registerAction(data: unknown) {
         passwordHash: await hashPassword(parsed.data.password),
         fullName: parsed.data.fullName,
         status: "ACTIVE",
+        termsAcceptedAt: new Date(),
+        termsVersion: LEGAL_TERMS_VERSION,
+        privacyAcceptedAt: new Date(),
+        privacyVersion: LEGAL_PRIVACY_VERSION,
       },
     });
 
@@ -94,5 +99,26 @@ export async function getCurrentUserAction() {
     return successResult(user);
   } catch {
     return errorResult("ไม่สามารถดึงข้อมูลผู้ใช้ได้");
+  }
+}
+
+export async function acceptLegalAction() {
+  try {
+    const session = await getSession();
+    if (!session) return errorResult("กรุณาเข้าสู่ระบบ");
+
+    await prisma.user.update({
+      where: { id: session.userId },
+      data: {
+        termsAcceptedAt: new Date(),
+        termsVersion: LEGAL_TERMS_VERSION,
+        privacyAcceptedAt: new Date(),
+        privacyVersion: LEGAL_PRIVACY_VERSION,
+      },
+    });
+
+    return successResult(null, "บันทึกการยอมรับเงื่อนไขและนโยบายความเป็นส่วนตัวแล้ว");
+  } catch {
+    return errorResult("ไม่สามารถบันทึกการยอมรับได้ กรุณาลองใหม่");
   }
 }

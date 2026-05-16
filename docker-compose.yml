@@ -1,0 +1,62 @@
+name: school-saver
+
+services:
+  db:
+    container_name: school-saver-postgres
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-school_saver}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-school_saver}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    container_name: school-saver-migrate
+    build:
+      context: .
+      target: migrator
+    image: ${APP_IMAGE:-school-saver:local}-migrator
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://postgres:postgres@db:5432/school_saver?schema=public}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    container_name: school-saver-app
+    build:
+      context: .
+      target: runner
+    image: ${APP_IMAGE:-school-saver:local}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://postgres:postgres@db:5432/school_saver?schema=public}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));\""]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  postgres_data:
