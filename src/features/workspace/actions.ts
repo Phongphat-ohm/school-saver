@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { defaultPaymentMethods } from "@/constants/payment-methods";
+import { logActivity, writeActivityLog } from "@/lib/activity-log";
 import { OWNER_ADMIN, OWNER_ONLY, requireWorkspaceRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { errorResult, successResult } from "@/lib/result";
@@ -81,6 +82,7 @@ export async function createWorkspaceAction(data: unknown) {
           status: "ACTIVE" as const,
         })),
       });
+      await writeActivityLog(tx, { workspaceId: created.id, userId: session.userId, action: "CREATE_WORKSPACE", detail: `สร้าง workspace ${created.name}` });
       return created;
     });
 
@@ -94,7 +96,7 @@ export async function createWorkspaceAction(data: unknown) {
 
 export async function updateCurrentWorkspaceAction(data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = workspaceSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูล workspace ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const workspace = await prisma.workspace.update({
@@ -104,6 +106,7 @@ export async function updateCurrentWorkspaceAction(data: unknown) {
         description: parsed.data.description,
       },
     });
+    await logActivity({ workspaceId, userId, action: "UPDATE_WORKSPACE", detail: `แก้ไข workspace ${workspace.name}` });
     revalidatePath("/");
     return successResult(workspace, "แก้ไข workspace สำเร็จ");
   } catch (error) {
@@ -152,6 +155,7 @@ export async function switchWorkspaceAction(workspaceId: string) {
     });
     if (!membership) return errorResult("คุณไม่มีสิทธิ์ใน workspace นี้");
     await setCurrentWorkspace(workspaceId);
+    await logActivity({ workspaceId, userId: session.userId, action: "SWITCH_WORKSPACE", detail: "สลับ workspace" });
     revalidatePath("/");
     return successResult({ workspaceId }, "สลับ workspace สำเร็จ");
   } catch {
@@ -161,7 +165,7 @@ export async function switchWorkspaceAction(workspaceId: string) {
 
 export async function inviteUserToWorkspaceAction(data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = inviteUserSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลผู้ใช้ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const user = await prisma.user.findUnique({ where: { username: parsed.data.username } });
@@ -171,6 +175,7 @@ export async function inviteUserToWorkspaceAction(data: unknown) {
       update: { role: parsed.data.role, status: "ACTIVE" },
       create: { workspaceId, userId: user.id, role: parsed.data.role, status: "ACTIVE" },
     });
+    await logActivity({ workspaceId, userId, action: "INVITE_WORKSPACE_USER", detail: `เพิ่ม ${user.fullName} เข้า workspace เป็น ${parsed.data.role}` });
     revalidatePath("/workspaces");
     return successResult(membership, "เพิ่มผู้ช่วยเข้า workspace สำเร็จ");
   } catch (error) {
@@ -180,7 +185,7 @@ export async function inviteUserToWorkspaceAction(data: unknown) {
 
 export async function searchUsersForWorkspaceInviteAction(keyword: string) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = workspaceUserSearchSchema.safeParse({ keyword });
     if (!parsed.success) return errorResult("กรุณากรอกคำค้นหา", parsed.error.flatten().fieldErrors);
     const users = await prisma.user.findMany({
@@ -188,12 +193,14 @@ export async function searchUsersForWorkspaceInviteAction(keyword: string) {
         status: "ACTIVE",
         OR: [
           { username: { contains: parsed.data.keyword, mode: "insensitive" } },
+          { email: { contains: parsed.data.keyword, mode: "insensitive" } },
           { fullName: { contains: parsed.data.keyword, mode: "insensitive" } },
         ],
       },
       select: {
         id: true,
         username: true,
+        email: true,
         fullName: true,
         workspaceMemberships: {
           where: { workspaceId, status: "ACTIVE" },
@@ -210,6 +217,7 @@ export async function searchUsersForWorkspaceInviteAction(keyword: string) {
       users.map((user) => ({
         id: user.id,
         username: user.username,
+        email: user.email,
         fullName: user.fullName,
         alreadyMember: user.workspaceMemberships.length > 0,
         pendingInvitation: user.receivedWorkspaceInvites[0] ?? null,
@@ -256,6 +264,7 @@ export async function sendWorkspaceInvitationAction(data: unknown) {
         invitedUser: { select: { username: true, fullName: true } },
       },
     });
+    await logActivity({ workspaceId, userId, action: "INVITE_WORKSPACE_USER", detail: `ส่งคำเชิญให้ ${invitedUser.fullName} เป็น ${parsed.data.role}` });
     revalidatePath("/workspaces");
     return successResult(invitation, `ส่งคำเชิญให้ ${invitedUser.fullName} แล้ว`);
   } catch (error) {
@@ -293,6 +302,7 @@ export async function requestJoinWorkspaceAction(data: unknown) {
         status: "PENDING",
       },
     });
+    await logActivity({ workspaceId: parsed.data.workspaceId, userId: session.userId, action: "REQUEST_JOIN_WORKSPACE", detail: `ขอเข้า workspace ${workspace.name}` });
     revalidatePath("/workspaces");
     return successResult(request, "ส่งคำขอเข้า workspace แล้ว รอผู้ดูแลอนุมัติ");
   } catch {
@@ -318,7 +328,7 @@ export async function getWorkspaceJoinRequestsAction() {
 
 export async function approveJoinRequestAction(data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = approveJoinRequestSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลอนุมัติไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const invitation = await prisma.workspaceInvitation.findFirst({
@@ -336,6 +346,7 @@ export async function approveJoinRequestAction(data: unknown) {
         where: { id: invitation.id },
         data: { status: "ACCEPTED", role: parsed.data.role, respondedAt: new Date() },
       });
+      await writeActivityLog(tx, { workspaceId, userId, action: "APPROVE_JOIN_REQUEST", detail: `อนุมัติผู้ใช้เข้า workspace เป็น ${parsed.data.role}` });
       return saved;
     });
     revalidatePath("/workspaces");
@@ -404,6 +415,7 @@ export async function acceptWorkspaceInvitationAction(invitationId: string) {
         where: { id: invitation.id },
         data: { status: "ACCEPTED", respondedAt: new Date() },
       });
+      await writeActivityLog(tx, { workspaceId: invitation.workspaceId, userId: session.userId, action: "ACCEPT_WORKSPACE_INVITATION", detail: "ตอบรับคำเชิญเข้า workspace" });
       return membership;
     });
     await setCurrentWorkspace(invitation.workspaceId);
@@ -426,6 +438,7 @@ export async function declineWorkspaceInvitationAction(invitationId: string) {
       where: { id: invitation.id },
       data: { status: "DECLINED", respondedAt: new Date() },
     });
+    await logActivity({ workspaceId: invitation.workspaceId, userId: session.userId, action: "DECLINE_WORKSPACE_INVITATION", detail: "ปฏิเสธคำเชิญเข้า workspace" });
     revalidatePath("/workspaces");
     return successResult(updated, "ปฏิเสธคำเชิญแล้ว");
   } catch {
@@ -445,7 +458,7 @@ async function ensureOwnerCanChange(workspaceId: string, targetUserId: string) {
 
 export async function updateWorkspaceMemberRoleAction(data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ONLY);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ONLY);
     const parsed = updateWorkspaceMemberRoleSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูล role ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     if (parsed.data.role !== "OWNER") await ensureOwnerCanChange(workspaceId, parsed.data.userId);
@@ -453,6 +466,7 @@ export async function updateWorkspaceMemberRoleAction(data: unknown) {
       where: { workspaceId_userId: { workspaceId, userId: parsed.data.userId } },
       data: { role: parsed.data.role },
     });
+    await logActivity({ workspaceId, userId, action: "UPDATE_WORKSPACE_MEMBER_ROLE", detail: `เปลี่ยนสิทธิ์ผู้ใช้เป็น ${parsed.data.role}` });
     revalidatePath("/workspaces");
     return successResult(updated, "อัปเดต role สำเร็จ");
   } catch (error) {
@@ -478,6 +492,7 @@ export async function removeWorkspaceMemberAction(data: unknown) {
       where: { workspaceId_userId: { workspaceId, userId: parsed.data.userId } },
       data: { status: "INACTIVE" },
     });
+    await logActivity({ workspaceId, userId, action: "REMOVE_WORKSPACE_MEMBER", detail: "นำผู้ใช้ออกจาก workspace" });
     revalidatePath("/workspaces");
     revalidatePath("/users");
     return successResult(updated, "ลบผู้ใช้ออกจาก workspace แล้ว");
@@ -491,7 +506,7 @@ export async function getWorkspaceMembersAction() {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
     const members = await prisma.workspaceMember.findMany({
       where: { workspaceId, status: "ACTIVE" },
-      include: { user: { select: { id: true, username: true, fullName: true, status: true } } },
+      include: { user: { select: { id: true, username: true, email: true, fullName: true, status: true } } },
       orderBy: [{ role: "asc" }, { createdAt: "asc" }],
     });
     return successResult(members);

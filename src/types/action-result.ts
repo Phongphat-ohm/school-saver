@@ -8,4 +8,5 @@ export type ActionResult<T = unknown> =
       success: false;
       message: string;
       errors?: Record<string, string[]>;
+      retryAfterSeconds?: number;
     };

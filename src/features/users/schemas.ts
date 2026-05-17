@@ -1,9 +1,16 @@
 import { z } from "zod";
 
+const optionalEmailSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
+}, z.string().email("อีเมลไม่ถูกต้อง").nullable());
+
 export const createWorkspaceUserSchema = z.object({
   username: z.string().trim().min(1, "กรุณากรอก username"),
   password: z.string().min(1, "กรุณากรอก password"),
   fullName: z.string().trim().min(1, "กรุณากรอกชื่อผู้ใช้"),
+  email: optionalEmailSchema,
   role: z.enum(["OWNER", "ADMIN", "COLLECTOR", "VIEWER"]),
 });
 
@@ -14,6 +21,11 @@ export const updateWorkspaceUserRoleSchema = z.object({
 
 export const updateMyProfileSchema = z.object({
   fullName: z.string().trim().min(1, "กรุณากรอกชื่อผู้ใช้"),
+  email: optionalEmailSchema,
+});
+
+export const verifyEmailOtpSchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/, "กรุณากรอก OTP 6 หลัก"),
 });
 
 export const changeMyPasswordSchema = z

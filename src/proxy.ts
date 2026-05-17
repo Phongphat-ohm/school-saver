@@ -36,15 +36,19 @@ export default function proxy(request: NextRequest) {
 
   const session = request.cookies.get("school_saver_session")?.value;
 
-  const isLogin = pathname === "/login";
-  const isRegister = pathname === "/register";
-  const isPublicLegal = pathname === "/terms" || pathname === "/privacy";
+  const isAuthPage = pathname === "/login" || pathname === "/register";
+  const isPublicPage =
+    isAuthPage ||
+    pathname === "/forgot-password" ||
+    pathname.startsWith("/reset-password/") ||
+    pathname === "/terms" ||
+    pathname === "/privacy";
 
-  if (!session && !isLogin && !isRegister && !isPublicLegal) {
+  if (!session && !isPublicPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (session && (isLogin || isRegister)) {
+  if (session && isAuthPage) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

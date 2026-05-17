@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { logActivity, writeActivityLog } from "@/lib/activity-log";
 import { prisma } from "@/lib/prisma";
 import { OWNER_ADMIN, requireWorkspaceRole } from "@/lib/permissions";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
@@ -77,7 +78,7 @@ export async function createCollectionRoundAction(data: unknown) {
 
 export async function updateCollectionRoundAction(roundId: string, data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = collectionRoundSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลรอบไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const round = await prisma.collectionRound.findFirst({
@@ -122,6 +123,7 @@ export async function updateCollectionRoundAction(roundId: string, data: unknown
           },
         });
       }
+      await writeActivityLog(tx, { workspaceId, userId, action: "UPDATE_ROUND", detail: `แก้ไขรอบ ${saved.title}` });
       return saved;
     });
 
@@ -259,11 +261,12 @@ export async function getRoundDetailAction(roundId: string) {
 
 export async function closeRoundAction(roundId: string) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId }, select: { id: true, status: true } });
     if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
     if (round.status !== "OPEN") return errorResult("ปิดได้เฉพาะรอบที่เปิดอยู่เท่านั้น");
     const updated = await prisma.collectionRound.update({ where: { id: roundId }, data: { status: "CLOSED" } });
+    await logActivity({ workspaceId, userId, action: "CLOSE_ROUND", detail: `ปิดรอบ ${updated.title}` });
     revalidatePath("/rounds");
     revalidatePath(`/rounds/${roundId}`);
     return successResult(updated, "ปิดรอบสำเร็จ");
@@ -274,11 +277,12 @@ export async function closeRoundAction(roundId: string) {
 
 export async function openRoundAction(roundId: string) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId }, select: { id: true, status: true } });
     if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
     if (round.status !== "CLOSED") return errorResult("เปิดกลับได้เฉพาะรอบที่ปิดอยู่เท่านั้น");
     const updated = await prisma.collectionRound.update({ where: { id: roundId }, data: { status: "OPEN" } });
+    await logActivity({ workspaceId, userId, action: "OPEN_ROUND", detail: `เปิดรอบ ${updated.title}` });
     revalidatePath("/rounds");
     revalidatePath(`/rounds/${roundId}`);
     return successResult(updated, "เปิดรอบสำเร็จ");
@@ -289,7 +293,7 @@ export async function openRoundAction(roundId: string) {
 
 export async function cancelRoundAction(roundId: string) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const round = await prisma.collectionRound.findFirst({ where: { id: roundId, workspaceId }, select: { id: true, status: true } });
     if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
     if (round.status === "CANCELLED") return errorResult("รอบนี้ถูกยกเลิกแล้ว");
@@ -299,6 +303,7 @@ export async function cancelRoundAction(roundId: string) {
         where: { workspaceId, roundId, status: { in: [...payableStatuses] } },
         data: { status: "WAIVED", remainingAmount: 0, fineAmount: 0 },
       });
+      await writeActivityLog(tx, { workspaceId, userId, action: "CANCEL_ROUND", detail: `ยกเลิกรอบ ${saved.title}` });
       return saved;
     });
     revalidatePath("/rounds");

@@ -79,6 +79,8 @@ enum WorkspaceInvitationStatus {
 model User {
   id                    String               @id @default(cuid())
   username              String               @unique
+  email                 String?              @unique
+  emailVerifiedAt       DateTime?
   passwordHash          String
   fullName              String
   status                UserStatus           @default(ACTIVE)
@@ -95,6 +97,38 @@ model User {
   createdRounds         CollectionRound[]    @relation("RoundCreator")
   sentWorkspaceInvites  WorkspaceInvitation[] @relation("WorkspaceInviteSender")
   receivedWorkspaceInvites WorkspaceInvitation[] @relation("WorkspaceInviteReceiver")
+  emailVerificationOtps EmailVerificationOtp[]
+  passwordResetTokens   PasswordResetToken[]
+}
+
+model EmailVerificationOtp {
+  id         String    @id @default(cuid())
+  userId     String
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  sentAt     DateTime  @default(now())
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, email, expiresAt])
+  @@index([userId, verifiedAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  sentAt    DateTime  @default(now())
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt])
+  @@index([userId, usedAt])
 }
 
 model Workspace {

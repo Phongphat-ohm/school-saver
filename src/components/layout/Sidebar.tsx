@@ -7,6 +7,7 @@ import {
   ChartNoAxesCombined,
   CircleAlert,
   CreditCard,
+  History,
   LayoutDashboard,
   LogOut,
   Settings,
@@ -28,6 +29,7 @@ const icons = {
   CreditCard,
   UserCog,
   ChartNoAxesCombined,
+  History,
   BookOpenText,
   Settings,
 };

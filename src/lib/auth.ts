@@ -13,6 +13,8 @@ export const getCurrentUser = cache(async function getCurrentUser() {
     select: {
       id: true,
       username: true,
+      email: true,
+      emailVerifiedAt: true,
       fullName: true,
       status: true,
       termsAcceptedAt: true,

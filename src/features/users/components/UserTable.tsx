@@ -44,6 +44,7 @@ export function UserTable({ users, actorRole }: { users: any[]; actorRole?: Work
             <div>
               <p className="font-semibold text-slate-950">{item.user.fullName}</p>
               <p className="text-sm text-slate-500">{item.user.username} • {roleLabels[item.role as keyof typeof roleLabels]}</p>
+              {item.user.email ? <p className="text-sm text-slate-500">{item.user.email}</p> : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={item.status} />

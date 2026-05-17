@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { logActivity } from "@/lib/activity-log";
 import { prisma } from "@/lib/prisma";
 import { OWNER_ADMIN, requireWorkspaceRole } from "@/lib/permissions";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
@@ -22,7 +23,7 @@ export async function getPaymentMethodsAction() {
 
 export async function createPaymentMethodAction(data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = paymentMethodSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลวิธีชำระเงินไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const duplicated = await prisma.paymentMethod.findUnique({
@@ -30,6 +31,7 @@ export async function createPaymentMethodAction(data: unknown) {
     });
     if (duplicated) return errorResult("ชื่อวิธีชำระเงินนี้มีอยู่แล้วใน workspace นี้");
     const method = await prisma.paymentMethod.create({ data: { workspaceId, ...parsed.data, status: "ACTIVE" } });
+    await logActivity({ workspaceId, userId, action: "CREATE_PAYMENT_METHOD", detail: `เพิ่มวิธีชำระเงิน ${method.name}` });
     revalidatePath("/payment-methods");
     return successResult(method, "เพิ่มวิธีชำระเงินสำเร็จ");
   } catch {
@@ -39,7 +41,7 @@ export async function createPaymentMethodAction(data: unknown) {
 
 export async function updatePaymentMethodAction(id: string, data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = paymentMethodSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลวิธีชำระเงินไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const method = await prisma.paymentMethod.findFirst({ where: { id, workspaceId } });
@@ -49,6 +51,7 @@ export async function updatePaymentMethodAction(id: string, data: unknown) {
     });
     if (duplicated) return errorResult("ชื่อวิธีชำระเงินนี้มีอยู่แล้วใน workspace นี้");
     const updated = await prisma.paymentMethod.update({ where: { id }, data: parsed.data });
+    await logActivity({ workspaceId, userId, action: "UPDATE_PAYMENT_METHOD", detail: `แก้ไขวิธีชำระเงิน ${updated.name}` });
     revalidatePath("/payment-methods");
     return successResult(updated, "แก้ไขวิธีชำระเงินสำเร็จ");
   } catch {
@@ -58,10 +61,11 @@ export async function updatePaymentMethodAction(id: string, data: unknown) {
 
 export async function disablePaymentMethodAction(id: string) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const method = await prisma.paymentMethod.findFirst({ where: { id, workspaceId } });
     if (!method) return errorResult("ไม่พบวิธีชำระเงินใน workspace นี้");
     const updated = await prisma.paymentMethod.update({ where: { id }, data: { status: "INACTIVE" } });
+    await logActivity({ workspaceId, userId, action: "DISABLE_PAYMENT_METHOD", detail: `ปิดใช้งานวิธีชำระเงิน ${method.name}` });
     revalidatePath("/payment-methods");
     return successResult(updated, "ปิดใช้งานวิธีชำระเงินแล้ว");
   } catch {

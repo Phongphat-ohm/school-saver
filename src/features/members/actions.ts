@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import * as XLSX from "xlsx";
+import { logActivity } from "@/lib/activity-log";
 import { prisma } from "@/lib/prisma";
 import { OWNER_ADMIN, requireWorkspaceRole } from "@/lib/permissions";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
@@ -39,7 +40,7 @@ export async function getMembersAction() {
 
 export async function createMemberAction(data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = memberSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลสมาชิกไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const duplicated = await prisma.member.findUnique({
@@ -49,6 +50,7 @@ export async function createMemberAction(data: unknown) {
     const member = await prisma.member.create({
       data: { workspaceId, ...parsed.data, status: "ACTIVE" },
     });
+    await logActivity({ workspaceId, userId, action: "CREATE_MEMBER", detail: `เพิ่มสมาชิก ${member.fullName} (${member.memberCode})` });
     revalidatePath("/members");
     return successResult(member, "เพิ่มสมาชิกสำเร็จ");
   } catch {
@@ -58,7 +60,7 @@ export async function createMemberAction(data: unknown) {
 
 export async function updateMemberAction(id: string, data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = memberSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลสมาชิกไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const member = await prisma.member.findFirst({ where: { id, workspaceId } });
@@ -68,6 +70,7 @@ export async function updateMemberAction(id: string, data: unknown) {
     });
     if (duplicated) return errorResult("รหัสสมาชิกนี้มีอยู่แล้วใน workspace นี้");
     const updated = await prisma.member.update({ where: { id }, data: parsed.data });
+    await logActivity({ workspaceId, userId, action: "UPDATE_MEMBER", detail: `แก้ไขสมาชิก ${updated.fullName} (${updated.memberCode})` });
     revalidatePath("/members");
     return successResult(updated, "แก้ไขสมาชิกสำเร็จ");
   } catch {
@@ -77,10 +80,11 @@ export async function updateMemberAction(id: string, data: unknown) {
 
 export async function disableMemberAction(id: string) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const member = await prisma.member.findFirst({ where: { id, workspaceId } });
     if (!member) return errorResult("ไม่พบสมาชิกใน workspace นี้");
     const updated = await prisma.member.update({ where: { id }, data: { status: "INACTIVE" } });
+    await logActivity({ workspaceId, userId, action: "DISABLE_MEMBER", detail: `ปิดใช้งานสมาชิก ${member.fullName} (${member.memberCode})` });
     revalidatePath("/members");
     return successResult(updated, "ปิดใช้งานสมาชิกแล้ว");
   } catch {
@@ -90,7 +94,7 @@ export async function disableMemberAction(id: string) {
 
 export async function disableMembersAction(ids: string[]) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
     if (uniqueIds.length === 0) return errorResult("กรุณาเลือกสมาชิกที่ต้องการลบ");
 
@@ -98,6 +102,7 @@ export async function disableMembersAction(ids: string[]) {
       where: { workspaceId, id: { in: uniqueIds }, status: "ACTIVE" },
       data: { status: "INACTIVE" },
     });
+    await logActivity({ workspaceId, userId, action: "DISABLE_MEMBER", detail: `ปิดใช้งานสมาชิก ${result.count} รายการ` });
 
     revalidatePath("/members");
     return successResult({ count: result.count }, `ลบสมาชิกสำเร็จ ${result.count} รายการ`);
@@ -108,7 +113,7 @@ export async function disableMembersAction(ids: string[]) {
 
 export async function importMembersAction(data: unknown) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = importMembersSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูล import ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
 
@@ -142,6 +147,7 @@ export async function importMembersAction(data: unknown) {
         status: "ACTIVE" as const,
       })),
     });
+    await logActivity({ workspaceId, userId, action: "IMPORT_MEMBERS", detail: `นำเข้าสมาชิก ${created.count} รายการ` });
 
     revalidatePath("/members");
     return successResult({ count: created.count }, `import สมาชิกสำเร็จ ${created.count} รายการ`);

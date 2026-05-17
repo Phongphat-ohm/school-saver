@@ -24,7 +24,7 @@ export function WorkspaceMemberList({
   members,
   actorRole,
 }: {
-  members: Array<{ id: string; role: WorkspaceRole; status: string; user: { id: string; username: string; fullName: string } }>;
+  members: Array<{ id: string; role: WorkspaceRole; status: string; user: { id: string; username: string; email: string | null; fullName: string } }>;
   actorRole?: WorkspaceRole | null;
 }) {
   const router = useRouter();
@@ -52,6 +52,7 @@ export function WorkspaceMemberList({
                   <p className="text-sm text-slate-500">
                     {member.user.username} • {roleLabels[member.role]}
                   </p>
+                  {member.user.email ? <p className="text-sm text-slate-500">{member.user.email}</p> : null}
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">

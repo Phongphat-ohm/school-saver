@@ -1,10 +1,11 @@
-import { LogOut, Settings, ShieldAlert, ShieldCheck, UserRound } from "lucide-react";
+import { LogOut, MailCheck, Settings, ShieldAlert, ShieldCheck, UserRound } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { roleLabels } from "@/constants/roles";
 import { logoutAction } from "@/features/auth/actions";
 import { ChangePasswordForm } from "@/features/settings/components/ChangePasswordForm";
+import { EmailVerificationForm } from "@/features/settings/components/EmailVerificationForm";
 import { AccountCancellationForm } from "@/features/settings/components/AccountCancellationForm";
 import { MyProfileForm } from "@/features/settings/components/MyProfileForm";
 import { WorkspaceSettingsForm } from "@/features/settings/components/WorkspaceSettingsForm";
@@ -36,6 +37,14 @@ export default async function SettingsPage() {
               <h3 className="text-lg font-bold text-slate-950">ข้อมูลผู้ใช้ของฉัน</h3>
             </div>
             <MyProfileForm user={user} />
+          </Card>
+
+          <Card>
+            <div className="mb-4 flex items-center gap-2">
+              <MailCheck size={20} className="text-blue-600" />
+              <h3 className="text-lg font-bold text-slate-950">ยืนยันอีเมล</h3>
+            </div>
+            <EmailVerificationForm user={user} />
           </Card>
 
           <Card>

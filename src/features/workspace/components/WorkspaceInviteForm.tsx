@@ -14,6 +14,7 @@ import { closeLoading, showError, showLoading, showSuccess } from "@/lib/swal";
 type SearchResult = {
   id: string;
   username: string;
+  email: string | null;
   fullName: string;
   alreadyMember: boolean;
   pendingInvitation: { id: string; role: string } | null;
@@ -81,7 +82,7 @@ export function WorkspaceInviteForm({ actorRole }: { actorRole?: WorkspaceRole |
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
             <div className="grid gap-3">
               <Input
-                label="ค้นหาด้วย username หรือชื่อ"
+                label="ค้นหาด้วย username, อีเมล หรือชื่อ"
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
                 onKeyDown={(event) => {
@@ -90,7 +91,7 @@ export function WorkspaceInviteForm({ actorRole }: { actorRole?: WorkspaceRole |
                     search();
                   }
                 }}
-                placeholder="เช่น somchai หรือ สมชาย"
+                placeholder="เช่น somchai, somchai@example.com หรือ สมชาย"
               />
               <div className="grid gap-3 md:grid-cols-[220px_1fr_auto] md:items-end">
                 <Select label="Role ที่จะมอบให้" value={role} onChange={(event) => setRole(event.target.value as WorkspaceRole)} options={visibleRoleOptions} />
@@ -115,7 +116,7 @@ export function WorkspaceInviteForm({ actorRole }: { actorRole?: WorkspaceRole |
                   <div className="grid place-items-center rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center">
                     <UsersRound className="text-slate-300" size={28} />
                     <p className="mt-3 text-sm font-semibold text-slate-700">ยังไม่มีผลการค้นหา</p>
-                    <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">กรอก username หรือชื่อผู้ใช้ แล้วกดค้นหาเพื่อเลือกคนที่ต้องการเชิญ</p>
+                    <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">กรอก username, อีเมล หรือชื่อผู้ใช้ แล้วกดค้นหาเพื่อเลือกคนที่ต้องการเชิญ</p>
                   </div>
                 ) : null}
 
@@ -129,6 +130,7 @@ export function WorkspaceInviteForm({ actorRole }: { actorRole?: WorkspaceRole |
                           <AtSign size={14} />
                           {user.username}
                         </p>
+                        {user.email ? <p className="truncate text-sm text-slate-500">{user.email}</p> : null}
                       </div>
                     </div>
 

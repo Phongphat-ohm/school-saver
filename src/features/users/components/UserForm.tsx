@@ -14,7 +14,7 @@ import { showError, showLoading, showSuccess, closeLoading } from "@/lib/swal";
 export function UserForm({ actorRole }: { actorRole?: WorkspaceRole | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [form, setForm] = useState({ username: "", password: "", fullName: "", role: "VIEWER" });
+  const [form, setForm] = useState({ username: "", password: "", fullName: "", email: "", role: "VIEWER" });
   const visibleRoleOptions = actorRole === "ADMIN" ? roleOptions.filter((option) => option.value !== "OWNER") : roleOptions;
   const set = (key: keyof typeof form, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -37,6 +37,7 @@ export function UserForm({ actorRole }: { actorRole?: WorkspaceRole | null }) {
       <Input label="Username" value={form.username} onChange={(event) => set("username", event.target.value)} />
       <Input label="Password" type="password" value={form.password} onChange={(event) => set("password", event.target.value)} />
       <Input label="ชื่อผู้ใช้" value={form.fullName} onChange={(event) => set("fullName", event.target.value)} />
+      <Input label="อีเมล (ไม่บังคับ)" type="email" value={form.email} onChange={(event) => set("email", event.target.value)} />
       <Select label="Role" value={form.role} onChange={(event) => set("role", event.target.value)} options={visibleRoleOptions} />
       <Button disabled={pending} className="gap-2">
         <UserPlus size={18} />เพิ่มผู้ใช้
