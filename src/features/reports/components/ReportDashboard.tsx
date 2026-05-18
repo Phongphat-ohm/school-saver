@@ -50,7 +50,7 @@ function downloadCsv(filename: string, rows: Array<Record<string, unknown>>) {
 }
 
 function formatChartDate(label: string) {
-  return new Date(label).toLocaleDateString("th-TH", { day: "2-digit", month: "short" });
+  return new Date(label).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", day: "2-digit", month: "short" });
 }
 
 const moneyTooltip = {

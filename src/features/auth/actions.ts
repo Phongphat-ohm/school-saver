@@ -4,15 +4,17 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { issueEmailVerificationOtp, verifyEmailOtp } from "@/lib/email-verification";
 import { getPasswordResetTokenStatus, hashPasswordResetToken, issuePasswordResetLink } from "@/lib/password-reset";
-import { createSession, destroySession, getSession } from "@/lib/session";
+import { createRestoreSession, createSession, destroySession, getSession } from "@/lib/session";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { isRequestIpBlocked, logActivity, logSecurityFailure } from "@/lib/activity-log";
 import { errorResult, successResult } from "@/lib/result";
 import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema, verifyEmailOtpSchema } from "@/features/auth/schemas";
 import { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION } from "@/constants/legal";
+import { purgeExpiredCancelledUsers } from "@/features/users/actions";
 
 export async function loginAction(username: string, password: string) {
   try {
+    await purgeExpiredCancelledUsers();
     if (await isRequestIpBlocked()) return errorResult("คำขอจากเครือข่ายนี้ถูกบล็อกชั่วคราว เนื่องจากทำรายการผิดพลาดหลายครั้ง");
 
     const parsed = loginSchema.safeParse({ username, password });
@@ -32,7 +34,7 @@ export async function loginAction(username: string, password: string) {
       },
     });
 
-    if (!user || user.status !== "ACTIVE") {
+    if (!user) {
       await logSecurityFailure({ action: "LOGIN_FAILED", detail: `Unknown or inactive username: ${parsed.data.username}` });
       return errorResult("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
     }
@@ -40,6 +42,15 @@ export async function loginAction(username: string, password: string) {
     if (!validPassword) {
       await logSecurityFailure({ userId: user.id, action: "LOGIN_FAILED", detail: `Invalid password for username: ${parsed.data.username}` });
       return errorResult("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+    }
+    if (user.status !== "ACTIVE") {
+      const canRestore = user.restoreUntil && user.restoreUntil >= new Date();
+      if (canRestore) {
+        await createRestoreSession(user.id);
+        return errorResult("บัญชีนี้ถูกยกเลิกแล้ว ระบบกำลังพาไปหน้ากู้คืนบัญชี", undefined, { redirectTo: `/restore-account?username=${encodeURIComponent(user.username)}` });
+      }
+      await logSecurityFailure({ userId: user.id, action: "LOGIN_FAILED", detail: `Inactive username: ${parsed.data.username}` });
+      return errorResult("บัญชีนี้ถูกยกเลิกหรือปิดใช้งานแล้ว");
     }
 
     const membership = user.workspaceMemberships[0] ?? null;
@@ -62,6 +73,7 @@ export async function loginAction(username: string, password: string) {
 
 export async function registerAction(data: unknown) {
   try {
+    await purgeExpiredCancelledUsers();
     const parsed = registerSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลสมัครสมาชิกไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const exists = await prisma.user.findFirst({

@@ -232,6 +232,15 @@ export async function getRoundDetailAction(roundId: string) {
                 status: true,
               },
             },
+            transactions: {
+              select: {
+                id: true,
+                amount: true,
+                paidAt: true,
+                note: true,
+              },
+              orderBy: { paidAt: "asc" },
+            },
           },
           orderBy: { member: { studentNo: "asc" } },
         },

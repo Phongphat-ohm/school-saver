@@ -2,18 +2,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { errorResult, successResult } from "@/lib/result";
-import { endOfDay, startOfDay } from "@/lib/date";
+import { addCalendarDays, endOfDay, startOfDay, toDateKey } from "@/lib/date";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
-
-function toDateKey(date: Date | string) {
-  return new Date(date).toISOString().slice(0, 10);
-}
-
-function addDays(date: Date, days: number) {
-  const value = new Date(date);
-  value.setDate(value.getDate() + days);
-  return value;
-}
 
 function getDateRange(startDate: Date, endDate: Date) {
   const dates: string[] = [];
@@ -21,7 +11,7 @@ function getDateRange(startDate: Date, endDate: Date) {
   const end = startOfDay(endDate);
   while (cursor <= end) {
     dates.push(toDateKey(cursor));
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return dates;
 }
@@ -30,7 +20,7 @@ export async function getReportDashboardAction(startDate?: Date, endDate?: Date)
   try {
     const { workspaceId, role } = await getCurrentWorkspaceOrThrow();
     const rangeEnd = endOfDay(endDate ?? new Date());
-    const rangeStart = startOfDay(startDate ?? addDays(rangeEnd, -29));
+    const rangeStart = startOfDay(startDate ?? addCalendarDays(rangeEnd, -29));
     const where = { workspaceId, paidAt: { gte: rangeStart, lte: rangeEnd } };
 
     const [totals, transactions, outstandingTotals, activeRoundCount] = await Promise.all([

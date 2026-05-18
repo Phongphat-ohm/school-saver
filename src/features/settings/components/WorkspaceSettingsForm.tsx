@@ -6,7 +6,7 @@ import { Building2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { deleteCurrentWorkspaceAction, updateCurrentWorkspaceAction } from "@/features/workspace/actions";
-import { closeLoading, showConfirm, showError, showLoading, showSuccess } from "@/lib/swal";
+import { closeLoading, showConfirm, showError, showLoading, showSuccess, showTextInputConfirm } from "@/lib/swal";
 
 export function WorkspaceSettingsForm({ workspace }: { workspace: { name: string; description: string | null; role?: string } }) {
   const router = useRouter();
@@ -55,7 +55,12 @@ export function WorkspaceSettingsForm({ workspace }: { workspace: { name: string
               disabled={pending}
               onClick={() => {
                 startTransition(async () => {
-                  const typedName = window.prompt(`พิมพ์ชื่อ workspace "${workspace.name}" เพื่อยืนยันการลบ`);
+                  const typedName = await showTextInputConfirm({
+                    title: "ยืนยันการลบ workspace",
+                    text: `พิมพ์ชื่อ workspace "${workspace.name}" เพื่อยืนยันการลบ`,
+                    placeholder: workspace.name,
+                    confirmButtonText: "ยืนยันการลบ",
+                  });
                   if (typedName === null) return;
                   if (typedName !== workspace.name) {
                     await showError("ชื่อ workspace ไม่ตรงกัน");

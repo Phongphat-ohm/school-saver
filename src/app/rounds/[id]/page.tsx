@@ -2,6 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { RoundMemberList } from "@/features/rounds/components/RoundMemberList";
 import { RoundSummary } from "@/features/rounds/components/RoundSummary";
+import { RoundDepositExportButton } from "@/features/rounds/components/RoundDepositExportButton";
 import { getRoundDetailAction } from "@/features/rounds/actions";
 import { getPaymentMethodsAction } from "@/features/payment-methods/actions";
 import { formatThaiDate } from "@/lib/date";
@@ -19,6 +20,9 @@ export default async function RoundDetailPage({ params }: { params: Promise<{ id
           <div>
             <h2 className="text-2xl font-bold text-slate-950">{result.data.round.title}</h2>
             <p className="text-sm text-slate-500">ครบกำหนด {formatThaiDate(result.data.round.dueDate)}</p>
+          </div>
+          <div className="flex justify-end">
+            <RoundDepositExportButton round={result.data.round} dayList={result.data.dayList} memberRounds={result.data.memberRounds} />
           </div>
           <RoundSummary summary={result.data.summary} />
           <div className="flex gap-2 overflow-x-auto pb-1">

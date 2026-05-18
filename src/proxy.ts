@@ -37,18 +37,24 @@ export default function proxy(request: NextRequest) {
   const session = request.cookies.get("school_saver_session")?.value;
 
   const isAuthPage = pathname === "/login" || pathname === "/register";
+  const isRestorePage = pathname === "/restore-account";
   const isPublicPage =
     isAuthPage ||
+    isRestorePage ||
     pathname === "/forgot-password" ||
     pathname.startsWith("/reset-password/") ||
     pathname === "/terms" ||
     pathname === "/privacy";
 
+  if (isRestorePage && !request.cookies.get("school_saver_restore_session")?.value) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   if (!session && !isPublicPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (session && isAuthPage) {
+  if (session && (isAuthPage || isRestorePage)) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

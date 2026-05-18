@@ -82,9 +82,9 @@ export async function issueEmailVerificationOtp(userId: string, email: string) {
                 <!-- ส่วนเนื้อหา -->
                 <tr>
                   <td align="center" style="padding: 0 40px 20px 40px;">
-                    <h2 style="margin: 0 0 16px 0; color: #0f172a; font-size: 24px; font-weight: 700;">ยืนยันที่อยู่อีเมลของคุณ</h2>
+                    <h2 style="margin: 0 0 16px 0; color: #0f172a; font-size: 24px; font-weight: 700;">ยืนยันการทำรายการ</h2>
                     <p style="margin: 0; color: #475569; font-size: 16px; line-height: 1.5;">
-                      กรุณานำรหัส OTP ด้านล่างนี้ไปกรอกในหน้าสมัครสมาชิก หรือการตั้งค่า เพื่อเสร็จสิ้นขั้นตอนการยืนยันอีเมลของคุณ
+                      กรุณานำรหัส OTP ด้านล่างนี้ไปกรอกในหน้าทำรายการเพื่อเสร็จขั้นตอนการทำงานของคุณ
                     </p>
                   </td>
                 </tr>

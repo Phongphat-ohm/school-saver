@@ -6,16 +6,20 @@ import { OWNER_ADMIN, requireWorkspaceRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { issueEmailVerificationOtp, verifyEmailOtp } from "@/lib/email-verification";
 import { errorResult, successResult } from "@/lib/result";
-import { destroySession, getSession } from "@/lib/session";
+import { destroyRestoreSession, destroySession, getRestoreSession, getSession } from "@/lib/session";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import {
   cancelMyAccountSchema,
   changeMyPasswordSchema,
   createWorkspaceUserSchema,
+  restoreCancelledAccountSchema,
   updateMyProfileSchema,
   updateWorkspaceUserRoleSchema,
   verifyEmailOtpSchema,
+  verifyRestoreAccountOtpSchema,
 } from "@/features/users/schemas";
+
+const ACCOUNT_RESTORE_DAYS = 30;
 
 export async function getWorkspaceUsersAction() {
   try {
@@ -33,6 +37,7 @@ export async function getWorkspaceUsersAction() {
 
 export async function createUserAndAddToWorkspaceAction(data: unknown) {
   try {
+    await purgeExpiredCancelledUsers();
     const { workspaceId, userId, role: actorRole } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = createWorkspaceUserSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลผู้ใช้ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
@@ -324,6 +329,10 @@ export async function cancelMyAccountAction(data: unknown) {
       return errorResult("ไม่พบผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
     }
 
+    if (!user.email) {
+      return errorResult("บัญชีนี้ยังไม่มีอีเมล กรุณาเพิ่มอีเมลก่อนยกเลิกบัญชี เพราะระบบต้องใช้อีเมลเพื่อส่ง OTP สำหรับกู้คืนบัญชี");
+    }
+
     const validPassword = await verifyPassword(parsed.data.password, user.passwordHash);
     if (!validPassword) return errorResult("รหัสผ่านไม่ถูกต้อง");
 
@@ -344,10 +353,13 @@ export async function cancelMyAccountAction(data: unknown) {
       }
     }
 
+    const cancelledAt = new Date();
+    const restoreUntil = new Date(cancelledAt.getTime() + ACCOUNT_RESTORE_DAYS * 24 * 60 * 60 * 1000);
+
     await prisma.$transaction(async (tx) => {
       await tx.workspaceMember.updateMany({
         where: { userId: session.userId, status: "ACTIVE" },
-        data: { status: "INACTIVE" },
+        data: { status: "INACTIVE", cancelledAt },
       });
       await tx.workspaceInvitation.updateMany({
         where: { invitedUserId: session.userId, status: "PENDING" },
@@ -359,13 +371,112 @@ export async function cancelMyAccountAction(data: unknown) {
       });
       await tx.user.update({
         where: { id: session.userId },
-        data: { status: "INACTIVE" },
+        data: { status: "INACTIVE", cancelledAt, restoreUntil, anonymizedAt: null },
       });
     });
 
     await destroySession();
-    return successResult({ cancelled: true }, "ยกเลิกบัญชีสำเร็จ");
+    return successResult({ cancelled: true, restoreUntil }, `ยกเลิกบัญชีสำเร็จ ระบบจะเก็บข้อมูลไว้ ${ACCOUNT_RESTORE_DAYS} วันเพื่อให้กู้คืนได้`);
   } catch {
     return errorResult("ไม่สามารถยกเลิกบัญชีได้");
   }
+}
+
+export async function restoreCancelledAccountAction(data: unknown) {
+  try {
+    const restoreSession = await getRestoreSession();
+    if (!restoreSession) return errorResult("กรุณาเข้าสู่ระบบก่อนเพื่อเริ่มขั้นตอนกู้คืนบัญชี", undefined, { redirectTo: "/login" });
+
+    const parsed = restoreCancelledAccountSchema.safeParse(data);
+    if (!parsed.success) return errorResult("ข้อมูลกู้คืนบัญชีไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+    const restoreEmail = parsed.data.email;
+    if (!restoreEmail) return errorResult("กรุณากรอกอีเมล");
+
+    await purgeExpiredCancelledUsers();
+
+    const user = await prisma.user.findUnique({
+      where: { id: restoreSession.userId },
+      select: { id: true, username: true, email: true, status: true, restoreUntil: true, anonymizedAt: true },
+    });
+    if (!user || user.anonymizedAt) return errorResult("ไม่พบบัญชีที่สามารถกู้คืนได้", undefined, { redirectTo: "/login" });
+    if (user.status === "ACTIVE") return errorResult("บัญชีนี้ใช้งานอยู่แล้ว กรุณาเข้าสู่ระบบตามปกติ", undefined, { redirectTo: "/login" });
+    if (!user.restoreUntil || user.restoreUntil < new Date()) return errorResult("บัญชีนี้เกิน 30 วันแล้ว ไม่สามารถกู้คืนได้", undefined, { redirectTo: "/login" });
+    if (parsed.data.username !== user.username || restoreEmail !== user.email) return errorResult("ชื่อผู้ใช้หรืออีเมลไม่ตรงกับบัญชีที่ต้องการกู้คืน");
+
+    await issueEmailVerificationOtp(user.id, restoreEmail);
+    return successResult({ sent: true, retryAfterSeconds: 60 }, "ส่งรหัส OTP ไปที่อีเมลแล้ว");
+  } catch {
+    return errorResult("ไม่สามารถส่งรหัสกู้คืนบัญชีได้");
+  }
+}
+
+export async function verifyRestoreAccountOtpAction(data: unknown) {
+  try {
+    const restoreSession = await getRestoreSession();
+    if (!restoreSession) return errorResult("กรุณาเข้าสู่ระบบก่อนเพื่อเริ่มขั้นตอนกู้คืนบัญชี", undefined, { redirectTo: "/login" });
+
+    const parsed = verifyRestoreAccountOtpSchema.safeParse(data);
+    if (!parsed.success) return errorResult("ข้อมูล OTP ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+
+    await purgeExpiredCancelledUsers();
+
+    const user = await prisma.user.findUnique({
+      where: { id: restoreSession.userId },
+      select: { id: true, email: true, status: true, restoreUntil: true, anonymizedAt: true },
+    });
+    if (!user?.email || user.anonymizedAt) return errorResult("ไม่พบบัญชีที่สามารถกู้คืนได้", undefined, { redirectTo: "/login" });
+    if (user.status === "ACTIVE") return errorResult("บัญชีนี้ใช้งานอยู่แล้ว กรุณาเข้าสู่ระบบตามปกติ", undefined, { redirectTo: "/login" });
+    if (!user.restoreUntil || user.restoreUntil < new Date()) return errorResult("บัญชีนี้เกิน 30 วันแล้ว ไม่สามารถกู้คืนได้", undefined, { redirectTo: "/login" });
+
+    const otpResult = await verifyEmailOtp(user.id, user.email, parsed.data.code);
+    if (!otpResult.ok) return errorResult(otpResult.message);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { status: "ACTIVE", cancelledAt: null, restoreUntil: null, anonymizedAt: null },
+      });
+      await tx.workspaceMember.updateMany({
+        where: { userId: user.id, status: "INACTIVE", cancelledAt: { not: null } },
+        data: { status: "ACTIVE", cancelledAt: null },
+      });
+    });
+    await destroyRestoreSession();
+
+    return successResult({ restored: true }, "กู้คืนบัญชีสำเร็จ กรุณาเข้าสู่ระบบอีกครั้ง");
+  } catch {
+    return errorResult("ไม่สามารถกู้คืนบัญชีได้");
+  }
+}
+
+export async function purgeExpiredCancelledUsers() {
+  const expiredUsers = await prisma.user.findMany({
+    where: {
+      status: "INACTIVE",
+      restoreUntil: { lt: new Date() },
+      anonymizedAt: null,
+    },
+    select: { id: true },
+    take: 50,
+  });
+
+  if (!expiredUsers.length) return { count: 0 };
+
+  const anonymizedAt = new Date();
+  await prisma.$transaction(
+    expiredUsers.map((user) =>
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          username: `deleted-${user.id}`,
+          email: null,
+          fullName: "Deleted user",
+          passwordHash: "deleted",
+          anonymizedAt,
+        },
+      }),
+    ),
+  );
+
+  return { count: expiredUsers.length };
 }

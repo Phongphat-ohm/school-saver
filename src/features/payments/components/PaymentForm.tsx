@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { useActionLock } from "@/hooks/useActionLock";
+import { formatInputDate } from "@/lib/date";
 import { showConfirm, showError, showLoading, showSuccess, closeLoading } from "@/lib/swal";
 
 export function PaymentForm({
@@ -26,7 +27,7 @@ export function PaymentForm({
   const isSubmitting = pending || actionLock.locked;
   const [amount, setAmount] = useState(Math.min(outstandingAmount, 10));
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id ?? "");
-  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
+  const [paidAt, setPaidAt] = useState(formatInputDate(new Date()));
   const [note, setNote] = useState("");
 
   return (
