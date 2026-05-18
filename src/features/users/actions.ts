@@ -142,9 +142,8 @@ export async function deleteWorkspaceUserAction(id: string) {
       const deletedMembership = await tx.workspaceMember.delete({
         where: { id },
       });
-      await tx.workspaceInvitation.updateMany({
+      await tx.workspaceInvitation.deleteMany({
         where: { workspaceId, invitedUserId: membership.userId, status: "PENDING" },
-        data: { status: "CANCELLED" },
       });
       await writeActivityLog(tx, { workspaceId, userId, action: "DELETE_USER", detail: `ลบผู้ใช้ ${membership.user.fullName} ออกจาก workspace` });
 

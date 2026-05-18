@@ -342,6 +342,13 @@ export async function approveJoinRequestAction(data: unknown) {
         update: { role: parsed.data.role, status: "ACTIVE" },
         create: { workspaceId, userId: invitation.invitedUserId, role: parsed.data.role, status: "ACTIVE" },
       });
+      await tx.workspaceInvitation.deleteMany({
+        where: {
+          workspaceId,
+          invitedUserId: invitation.invitedUserId,
+          NOT: { id: invitation.id },
+        },
+      });
       await tx.workspaceInvitation.update({
         where: { id: invitation.id },
         data: { status: "ACCEPTED", role: parsed.data.role, respondedAt: new Date() },
@@ -409,6 +416,13 @@ export async function acceptWorkspaceInvitationAction(invitationId: string) {
           userId: session.userId,
           role: invitation.role,
           status: "ACTIVE",
+        },
+      });
+      await tx.workspaceInvitation.deleteMany({
+        where: {
+          workspaceId: invitation.workspaceId,
+          invitedUserId: session.userId,
+          NOT: { id: invitation.id },
         },
       });
       await tx.workspaceInvitation.update({
