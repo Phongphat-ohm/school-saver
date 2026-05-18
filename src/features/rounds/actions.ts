@@ -64,9 +64,7 @@ export async function createCollectionRoundAction(data: unknown) {
           status: "UNPAID" as const,
         })),
       });
-      await tx.activityLog.create({
-        data: { workspaceId, userId, action: "CREATE_ROUND", detail: `สร้างรอบ ${created.title}` },
-      });
+      await writeActivityLog(tx, { workspaceId, userId, action: "CREATE_ROUND", detail: `สร้างรอบ ${created.title}` });
       return created;
     });
     revalidatePath("/rounds");
@@ -357,9 +355,7 @@ export async function restoreCancelledRoundAction(roundId: string) {
         }),
       );
 
-      await tx.activityLog.create({
-        data: { workspaceId, userId, action: "RESTORE_CANCELLED_ROUND", detail: `คืนรอบที่ถูกยกเลิก ${round.title}` },
-      });
+      await writeActivityLog(tx, { workspaceId, userId, action: "RESTORE_CANCELLED_ROUND", detail: `คืนรอบที่ถูกยกเลิก ${round.title}` });
 
       return saved;
     });

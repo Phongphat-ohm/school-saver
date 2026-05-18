@@ -314,14 +314,22 @@ model PaymentMethod {
 
 model ActivityLog {
   id          String    @id @default(cuid())
-  workspaceId String
-  userId      String
+  workspaceId String?
+  userId      String?
   action      String
   detail      String?
+  outcome     String    @default("SUCCESS")
+  ipAddress   String?
+  userAgent   String?
+  method      String?
+  path        String?
   createdAt   DateTime  @default(now())
-  workspace   Workspace @relation(fields: [workspaceId], references: [id])
-  user        User      @relation(fields: [userId], references: [id])
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
+  user        User?      @relation(fields: [userId], references: [id])
 
   @@index([workspaceId])
   @@index([userId])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, action, createdAt])
+  @@index([ipAddress, outcome, createdAt])
 }

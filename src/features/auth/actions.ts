@@ -6,14 +6,20 @@ import { issueEmailVerificationOtp, verifyEmailOtp } from "@/lib/email-verificat
 import { getPasswordResetTokenStatus, hashPasswordResetToken, issuePasswordResetLink } from "@/lib/password-reset";
 import { createSession, destroySession, getSession } from "@/lib/session";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { isRequestIpBlocked, logActivity, logSecurityFailure } from "@/lib/activity-log";
 import { errorResult, successResult } from "@/lib/result";
 import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema, verifyEmailOtpSchema } from "@/features/auth/schemas";
 import { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION } from "@/constants/legal";
 
 export async function loginAction(username: string, password: string) {
   try {
+    if (await isRequestIpBlocked()) return errorResult("คำขอจากเครือข่ายนี้ถูกบล็อกชั่วคราว เนื่องจากทำรายการผิดพลาดหลายครั้ง");
+
     const parsed = loginSchema.safeParse({ username, password });
-    if (!parsed.success) return errorResult("ข้อมูลเข้าสู่ระบบไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+    if (!parsed.success) {
+      await logSecurityFailure({ action: "LOGIN_FAILED", detail: "Invalid login payload" });
+      return errorResult("ข้อมูลเข้าสู่ระบบไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+    }
 
     const user = await prisma.user.findUnique({
       where: { username: parsed.data.username },
@@ -26,12 +32,24 @@ export async function loginAction(username: string, password: string) {
       },
     });
 
-    if (!user || user.status !== "ACTIVE") return errorResult("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+    if (!user || user.status !== "ACTIVE") {
+      await logSecurityFailure({ action: "LOGIN_FAILED", detail: `Unknown or inactive username: ${parsed.data.username}` });
+      return errorResult("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+    }
     const validPassword = await verifyPassword(parsed.data.password, user.passwordHash);
-    if (!validPassword) return errorResult("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+    if (!validPassword) {
+      await logSecurityFailure({ userId: user.id, action: "LOGIN_FAILED", detail: `Invalid password for username: ${parsed.data.username}` });
+      return errorResult("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+    }
 
     const membership = user.workspaceMemberships[0] ?? null;
     await createSession(user.id, membership?.workspaceId ?? null);
+    await logActivity({
+      workspaceId: membership?.workspaceId ?? null,
+      userId: user.id,
+      action: "LOGIN",
+      detail: `เข้าสู่ระบบด้วย username: ${user.username}`,
+    });
 
     return successResult({
       user: { id: user.id, username: user.username, email: user.email, emailVerifiedAt: user.emailVerifiedAt, fullName: user.fullName },

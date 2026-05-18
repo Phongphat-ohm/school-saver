@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { writeActivityLog } from "@/lib/activity-log";
 import { COLLECT_PAYMENT, requireWorkspaceRole } from "@/lib/permissions";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
 import { errorResult, successResult } from "@/lib/result";
@@ -146,13 +147,11 @@ export async function payMemberRoundAction(data: unknown) {
           completedAt: completed ? parsed.data.paidAt : null,
         },
       });
-      await tx.activityLog.create({
-        data: {
-          workspaceId,
-          userId,
-          action: "COLLECT_PAYMENT",
-          detail: `รับเงิน ${memberRound.member.fullName} จำนวน ${parsed.data.amount}`,
-        },
+      await writeActivityLog(tx, {
+        workspaceId,
+        userId,
+        action: "COLLECT_PAYMENT",
+        detail: `รับเงิน ${memberRound.member.fullName} จำนวน ${parsed.data.amount}`,
       });
       return { transaction, memberRound: updated };
     });
@@ -224,13 +223,11 @@ export async function cancelPaymentTransactionAction(transactionId: string) {
         },
       });
 
-      await tx.activityLog.create({
-        data: {
-          workspaceId,
-          userId,
-          action: "CANCEL_PAYMENT",
-          detail: `ยกเลิกรับเงิน ${transaction.member.fullName} จำนวน ${transaction.amount}`,
-        },
+      await writeActivityLog(tx, {
+        workspaceId,
+        userId,
+        action: "CANCEL_PAYMENT",
+        detail: `ยกเลิกรับเงิน ${transaction.member.fullName} จำนวน ${transaction.amount}`,
       });
 
       return { transaction, memberRound: updated };
@@ -256,7 +253,7 @@ export async function waiveMemberRoundAction(memberRoundId: string, note?: strin
       where: { id: memberRoundId },
       data: { status: "WAIVED", remainingAmount: 0 },
     });
-    await prisma.activityLog.create({ data: { workspaceId, userId, action: "WAIVE_PAYMENT", detail: note } });
+    await writeActivityLog(prisma, { workspaceId, userId, action: "WAIVE_PAYMENT", detail: note });
     revalidatePath("/");
     return successResult(updated, "ยกเว้นยอดสำเร็จ");
   } catch {

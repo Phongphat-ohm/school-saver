@@ -1,6 +1,11 @@
-import { Activity, BadgeCheck, CreditCard, FileClock, Settings, UsersRound } from "lucide-react";
+import Link from "next/link";
+import type React from "react";
+import { Activity, BadgeCheck, CreditCard, FileClock, Search, Settings, ShieldAlert, UsersRound } from "lucide-react";
 
 const actionLabels: Record<string, string> = {
+  LOGIN: "เข้าสู่ระบบ",
+  LOGIN_FAILED: "เข้าสู่ระบบไม่สำเร็จ",
+  SECURITY_BLOCKED_IP: "บล็อก IP ชั่วคราว",
   CREATE_WORKSPACE: "สร้าง workspace",
   UPDATE_WORKSPACE: "แก้ไข workspace",
   SWITCH_WORKSPACE: "สลับ workspace",
@@ -35,7 +40,20 @@ const actionLabels: Record<string, string> = {
   WAIVE_PAYMENT: "ยกเว้นยอด",
 };
 
+const outcomeLabels: Record<string, string> = {
+  SUCCESS: "สำเร็จ",
+  FAILURE: "ผิดพลาด",
+  BLOCKED: "บล็อก",
+};
+
+const outcomeClasses: Record<string, string> = {
+  SUCCESS: "bg-emerald-50 text-emerald-700",
+  FAILURE: "bg-amber-50 text-amber-700",
+  BLOCKED: "bg-red-50 text-red-700",
+};
+
 const categoryIcons = {
+  security: ShieldAlert,
   user: UsersRound,
   payment: CreditCard,
   round: FileClock,
@@ -44,7 +62,8 @@ const categoryIcons = {
   default: Activity,
 };
 
-function getIcon(action: string) {
+function getIcon(action: string, outcome: string) {
+  if (outcome === "BLOCKED" || action.includes("FAILED") || action.includes("SECURITY")) return categoryIcons.security;
   if (action.includes("PAYMENT")) return categoryIcons.payment;
   if (action.includes("ROUND")) return categoryIcons.round;
   if (action.includes("USER") || action.includes("MEMBER") || action.includes("INVITATION")) return categoryIcons.user;
@@ -64,42 +83,153 @@ type ActivityLogItem = {
   id: string;
   action: string;
   detail: string | null;
+  outcome: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  method: string | null;
+  path: string | null;
   createdAt: Date;
   user: {
+    id: string;
     username: string;
     fullName: string;
     email: string | null;
+  } | null;
+};
+
+type ActivityLogListProps = {
+  data: {
+    logs: ActivityLogItem[];
+    filters: {
+      page: number;
+      pageSize: number;
+      maxCount: number;
+      q: string;
+      action: string;
+      outcome: string;
+      userId: string;
+      ipAddress: string;
+    };
+    pagination: {
+      page: number;
+      pageSize: number;
+      maxCount: number;
+      total: number;
+      cappedTotal: number;
+      pageCount: number;
+      hasPreviousPage: boolean;
+      hasNextPage: boolean;
+    };
+    options: {
+      actions: string[];
+      outcomes: string[];
+      users: Array<{ id: string; username: string; fullName: string; email: string | null }>;
+    };
   };
 };
 
-export function ActivityLogList({ logs }: { logs: ActivityLogItem[] }) {
+export function ActivityLogList({ data }: ActivityLogListProps) {
+  const { logs, filters, pagination, options } = data;
+
   return (
     <section className="grid gap-4">
       <div>
         <h1 className="text-3xl font-black text-slate-950">Activity Log</h1>
-        <p className="mt-1 text-sm text-slate-500">ประวัติการทำรายการล่าสุดใน workspace นี้</p>
+        <p className="mt-1 text-sm text-slate-500">ตรวจสอบการทำงาน, IP, เหตุการณ์ผิดพลาด และรายการที่ถูกบล็อกในระบบ</p>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <form className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_auto]">
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          <span>ค้นหา</span>
+          <div className="flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100">
+            <Search size={18} className="text-slate-400" />
+            <input name="q" defaultValue={filters.q} placeholder="action, detail, IP, user" className="w-full bg-transparent text-slate-900 outline-none placeholder:text-slate-400" />
+          </div>
+        </label>
+
+        <Select name="action" label="Action" defaultValue={filters.action}>
+          <option value="">ทั้งหมด</option>
+          {options.actions.map((action) => (
+            <option key={action} value={action}>
+              {actionLabels[action] ?? action}
+            </option>
+          ))}
+        </Select>
+
+        <Select name="outcome" label="ผลลัพธ์" defaultValue={filters.outcome}>
+          <option value="">ทั้งหมด</option>
+          {options.outcomes.map((outcome) => (
+            <option key={outcome} value={outcome}>
+              {outcomeLabels[outcome] ?? outcome}
+            </option>
+          ))}
+        </Select>
+
+        <Select name="userId" label="ผู้ใช้" defaultValue={filters.userId}>
+          <option value="">ทั้งหมด</option>
+          {options.users.map((user) => (
+            <option key={user.id} value={user.id}>
+              {user.fullName || user.username}
+            </option>
+          ))}
+        </Select>
+
+        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+          <span>IP</span>
+          <input name="ipAddress" defaultValue={filters.ipAddress} className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" />
+        </label>
+
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-[90px_90px_auto] lg:items-end">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            <span>ต่อหน้า</span>
+            <input name="pageSize" type="number" min={1} max={100} defaultValue={filters.pageSize} className="min-h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+            <span>Max</span>
+            <input name="maxCount" type="number" min={1} max={1000} defaultValue={filters.maxCount} className="min-h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" />
+          </label>
+          <button className="col-span-2 min-h-11 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white transition hover:bg-blue-800 lg:col-span-1" type="submit">
+            กรอง
+          </button>
+        </div>
+      </form>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
+        <span>
+          แสดง {logs.length} รายการจาก {pagination.cappedTotal} รายการที่ใช้ได้ {pagination.total > pagination.maxCount ? `(จำกัด maxCount ${pagination.maxCount})` : ""}
+        </span>
+        <Link href="/activity-logs" className="font-semibold text-blue-700 hover:text-blue-800">
+          ล้างตัวกรอง
+        </Link>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         {logs.length ? (
           <div className="divide-y divide-slate-100">
             {logs.map((log) => {
-              const Icon = getIcon(log.action);
+              const Icon = getIcon(log.action, log.outcome);
               return (
-                <article key={log.id} className="grid gap-3 p-4 sm:grid-cols-[auto_1fr_auto] sm:items-center">
-                  <div className="flex size-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+                <article key={log.id} className="grid gap-3 p-4 sm:grid-cols-[auto_1fr_auto] sm:items-start">
+                  <div className="flex size-11 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
                     <Icon size={20} />
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-bold text-slate-950">{actionLabels[log.action] ?? log.action}</p>
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">{log.action}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${outcomeClasses[log.outcome] ?? "bg-slate-100 text-slate-600"}`}>
+                        {outcomeLabels[log.outcome] ?? log.outcome}
+                      </span>
                     </div>
                     {log.detail ? <p className="mt-1 text-sm text-slate-600">{log.detail}</p> : null}
                     <p className="mt-1 text-xs text-slate-400">
-                      โดย {log.user.fullName || log.user.username}
-                      {log.user.email ? ` • ${log.user.email}` : ""}
+                      โดย {log.user ? log.user.fullName || log.user.username : "Guest/System"}
+                      {log.user?.email ? ` • ${log.user.email}` : ""}
                     </p>
+                    <p className="mt-1 break-words text-xs text-slate-400">
+                      IP: {log.ipAddress ?? "-"} {log.method ? `• ${log.method}` : ""} {log.path ? `• ${log.path}` : ""}
+                    </p>
+                    {log.userAgent ? <p className="mt-1 line-clamp-1 break-all text-xs text-slate-400">{log.userAgent}</p> : null}
                   </div>
                   <time className="text-sm font-semibold text-slate-500 sm:text-right">{formatDateTime(log.createdAt)}</time>
                 </article>
@@ -107,9 +237,64 @@ export function ActivityLogList({ logs }: { logs: ActivityLogItem[] }) {
             })}
           </div>
         ) : (
-          <div className="p-8 text-center text-sm text-slate-500">ยังไม่มี activity log ใน workspace นี้</div>
+          <div className="p-8 text-center text-sm text-slate-500">ยังไม่มี activity log ที่ตรงกับตัวกรองนี้</div>
         )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm font-semibold text-slate-500">
+          หน้า {pagination.page} / {pagination.pageCount}
+        </span>
+        <div className="flex gap-2">
+          <PaginationLink disabled={!pagination.hasPreviousPage} page={pagination.page - 1} filters={filters}>
+            ก่อนหน้า
+          </PaginationLink>
+          <PaginationLink disabled={!pagination.hasNextPage} page={pagination.page + 1} filters={filters}>
+            ถัดไป
+          </PaginationLink>
+        </div>
       </div>
     </section>
   );
+}
+
+function Select({ label, children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string }) {
+  return (
+    <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+      <span>{label}</span>
+      <select className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" {...props}>
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function PaginationLink({
+  disabled,
+  page,
+  filters,
+  children,
+}: {
+  disabled: boolean;
+  page: number;
+  filters: ActivityLogListProps["data"]["filters"];
+  children: React.ReactNode;
+}) {
+  if (disabled) {
+    return <span className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-300">{children}</span>;
+  }
+
+  return (
+    <Link href={buildActivityLogHref(filters, page)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 transition hover:border-blue-200 hover:text-blue-700">
+      {children}
+    </Link>
+  );
+}
+
+function buildActivityLogHref(filters: ActivityLogListProps["data"]["filters"], page: number) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries({ ...filters, page })) {
+    if (value !== "" && value !== undefined && value !== null) params.set(key, String(value));
+  }
+  return `/activity-logs?${params.toString()}`;
 }
