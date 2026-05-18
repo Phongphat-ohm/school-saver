@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/Select";
 import { MemberPaymentQrScanner } from "@/features/payments/components/MemberPaymentQrScanner";
 import { PaymentCard } from "@/features/payments/components/PaymentCard";
 import { PaymentForm } from "@/features/payments/components/PaymentForm";
+import type { MemberPaymentQrPayload } from "@/lib/member-qr";
 import { showError } from "@/lib/swal";
 
 const statusOptions = [
@@ -54,7 +55,8 @@ export function RoundMemberList({
     setKeyword(initialKeyword);
   }, [initialKeyword]);
 
-  function applyScannedMember(memberCode: string) {
+  function applyScannedMember(payload: MemberPaymentQrPayload) {
+    const memberCode = payload.memberCode;
     const normalizedMemberCode = memberCode.trim().toLowerCase();
     const matchedRows = memberRounds.filter((row) => row.member?.memberCode?.trim().toLowerCase() === normalizedMemberCode);
     const payableRow = matchedRows.find((row) => {
@@ -80,7 +82,8 @@ export function RoundMemberList({
       return;
     }
 
-    setScannedPaymentRow({ ...payableRow, round: round ?? payableRow.round });
+    const defaultPaymentMethodId = paymentMethods.some((method) => method.id === payload.paymentMethodId) ? payload.paymentMethodId : undefined;
+    setScannedPaymentRow({ ...payableRow, round: round ?? payableRow.round, defaultPaymentMethodId });
   }
 
   const rows = useMemo(() => {
@@ -173,6 +176,7 @@ export function RoundMemberList({
             memberRoundId={scannedPaymentRow.id}
             outstandingAmount={scannedPaymentRow.current?.outstandingAmount ?? scannedPaymentRow.remainingAmount ?? 0}
             paymentMethods={paymentMethods}
+            defaultPaymentMethodId={scannedPaymentRow.defaultPaymentMethodId}
             onSuccess={() => setScannedPaymentRow(null)}
           />
         ) : null}

@@ -41,6 +41,10 @@ export default function proxy(request: NextRequest) {
   const isPublicPage =
     isAuthPage ||
     isRestorePage ||
+<<<<<<< HEAD
+=======
+    pathname.startsWith("/member-card/") ||
+>>>>>>> dev
     pathname === "/forgot-password" ||
     pathname.startsWith("/reset-password/") ||
     pathname === "/terms" ||

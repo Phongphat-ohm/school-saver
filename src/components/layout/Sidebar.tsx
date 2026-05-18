@@ -55,7 +55,7 @@ export async function Sidebar() {
             <p className="text-[13px] text-slate-400">Smart classroom saving</p>
           </div>
         </div>
-        <nav className="grid flex-1 content-start gap-5 overflow-y-auto pr-1">
+        <nav className="sidebar-scrollbar grid flex-1 content-start gap-5 overflow-y-auto pr-2">
           {navigationGroups.map((group) => (
             <div key={group}>
               <p className="mb-2 px-3 text-xs font-black tracking-wide text-slate-400">{group}</p>
