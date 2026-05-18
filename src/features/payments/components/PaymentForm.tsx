@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { payMemberRoundAction } from "@/features/payments/actions";
 import { Button } from "@/components/ui/Button";
@@ -14,11 +14,13 @@ export function PaymentForm({
   memberRoundId,
   outstandingAmount,
   paymentMethods,
+  defaultPaymentMethodId,
   onSuccess,
 }: {
   memberRoundId: string;
   outstandingAmount: number;
   paymentMethods: Array<{ id: string; name: string }>;
+  defaultPaymentMethodId?: string;
   onSuccess?: () => void;
 }) {
   const router = useRouter();
@@ -26,9 +28,17 @@ export function PaymentForm({
   const actionLock = useActionLock();
   const isSubmitting = pending || actionLock.locked;
   const [amount, setAmount] = useState(Math.min(outstandingAmount, 10));
-  const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id ?? "");
+  const [paymentMethodId, setPaymentMethodId] = useState(defaultPaymentMethodId ?? paymentMethods[0]?.id ?? "");
   const [paidAt, setPaidAt] = useState(formatInputDate(new Date()));
   const [note, setNote] = useState("");
+
+  useEffect(() => {
+    setPaymentMethodId((current) => {
+      if (defaultPaymentMethodId && paymentMethods.some((method) => method.id === defaultPaymentMethodId)) return defaultPaymentMethodId;
+      if (paymentMethods.some((method) => method.id === current)) return current;
+      return paymentMethods[0]?.id ?? "";
+    });
+  }, [defaultPaymentMethodId, paymentMethods]);
 
   return (
     <form
