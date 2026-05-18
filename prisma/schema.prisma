@@ -88,6 +88,9 @@ model User {
   termsVersion          String?
   privacyAcceptedAt     DateTime?
   privacyVersion        String?
+  cancelledAt           DateTime?
+  restoreUntil          DateTime?
+  anonymizedAt          DateTime?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   ownedWorkspaces       Workspace[]          @relation("WorkspaceOwner")
@@ -99,6 +102,9 @@ model User {
   receivedWorkspaceInvites WorkspaceInvitation[] @relation("WorkspaceInviteReceiver")
   emailVerificationOtps EmailVerificationOtp[]
   passwordResetTokens   PasswordResetToken[]
+
+  @@index([status, restoreUntil])
+  @@index([anonymizedAt])
 }
 
 model EmailVerificationOtp {
@@ -178,6 +184,7 @@ model WorkspaceMember {
   userId      String
   role        WorkspaceRole
   status      WorkspaceMemberStatus @default(ACTIVE)
+  cancelledAt DateTime?
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
   workspace   Workspace             @relation(fields: [workspaceId], references: [id])
@@ -186,6 +193,7 @@ model WorkspaceMember {
   @@unique([workspaceId, userId])
   @@index([workspaceId])
   @@index([workspaceId, status, role, createdAt])
+  @@index([userId, status, cancelledAt])
   @@index([userId])
   @@index([userId, status, createdAt])
 }

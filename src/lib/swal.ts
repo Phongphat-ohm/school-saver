@@ -22,6 +22,33 @@ export async function showConfirm(title: string, text: string) {
   return result.isConfirmed;
 }
 
+export async function showTextInputConfirm(input: {
+  title: string;
+  text: string;
+  placeholder?: string;
+  confirmButtonText?: string;
+}) {
+  const result = await Swal.fire<string>({
+    icon: "warning",
+    title: input.title,
+    text: input.text,
+    input: "text",
+    inputPlaceholder: input.placeholder,
+    inputAttributes: {
+      autocapitalize: "off",
+      autocorrect: "off",
+    },
+    showCancelButton: true,
+    confirmButtonText: input.confirmButtonText ?? "ยืนยัน",
+    cancelButtonText: "ยกเลิก",
+    inputValidator: (value) => {
+      if (!value) return "กรุณากรอกข้อมูลเพื่อยืนยัน";
+    },
+  });
+
+  return result.isConfirmed ? (result.value ?? "") : null;
+}
+
 export function showLoading(title = "กำลังดำเนินการ") {
   Swal.fire({ title, allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 }

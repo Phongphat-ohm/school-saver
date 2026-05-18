@@ -24,6 +24,10 @@ export function LoginForm() {
           const result = await loginAction(username, password);
           closeLoading();
           if (!result.success) {
+            if (result.redirectTo) {
+              router.push(result.redirectTo);
+              return;
+            }
             await showError(result.message);
             return;
           }

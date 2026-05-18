@@ -8,7 +8,7 @@ export function successResult<T>(data: T, message?: string): ActionResult<T> {
   };
 }
 
-export function errorResult<T = never>(message: string, errors?: Record<string, string[]>, meta?: { retryAfterSeconds?: number }): ActionResult<T> {
+export function errorResult<T = never>(message: string, errors?: Record<string, string[]>, meta?: { retryAfterSeconds?: number; redirectTo?: string }): ActionResult<T> {
   return {
     success: false,
     message,

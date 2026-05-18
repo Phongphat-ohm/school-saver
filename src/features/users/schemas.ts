@@ -46,3 +46,12 @@ export const cancelMyAccountSchema = z.object({
   message: "กรุณาพิมพ์คำว่า ยกเลิกบัญชี เพื่อยืนยัน",
   path: ["confirmText"],
 });
+
+export const restoreCancelledAccountSchema = z.object({
+  username: z.string().trim().min(1, "กรุณากรอกชื่อผู้ใช้"),
+  email: optionalEmailSchema.refine((email) => !!email, "กรุณากรอกอีเมล"),
+});
+
+export const verifyRestoreAccountOtpSchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/, "กรุณากรอก OTP 6 หลัก"),
+});

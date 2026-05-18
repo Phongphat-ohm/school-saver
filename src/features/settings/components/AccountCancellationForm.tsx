@@ -22,7 +22,7 @@ export function AccountCancellationForm() {
         startTransition(async () => {
           const confirmed = await showConfirm(
             "ยกเลิกบัญชี",
-            "บัญชีของคุณจะถูกปิดใช้งาน ออกจากทุก workspace และต้องสมัครใหม่หากต้องการกลับมาใช้งาน",
+            "ระบบจะปิดบัญชีและเก็บข้อมูลไว้ 30 วันเพื่อให้กู้คืนได้ หากไม่กู้คืนภายในกำหนด ระบบจะลบ/ปกปิดข้อมูลผู้ใช้ออกจากระบบทั้งหมด",
           );
           if (!confirmed) return;
           showLoading("กำลังยกเลิกบัญชี");
@@ -37,7 +37,7 @@ export function AccountCancellationForm() {
       }}
     >
       <p className="text-sm leading-6 text-rose-700">
-        การยกเลิกบัญชีจะปิดบัญชีของคุณและนำคุณออกจากทุก workspace หากคุณเป็น OWNER คนเดียวของ workspace ใด ระบบจะไม่อนุญาตให้ยกเลิกจนกว่าจะมอบสิทธิ์ OWNER ให้คนอื่นก่อน
+        การยกเลิกบัญชีจะปิดบัญชีของคุณและนำคุณออกจากทุก workspace ระบบจะเก็บข้อมูลไว้ 30 วันเพื่อให้กู้คืนได้ หากไม่กู้คืนภายในกำหนด ระบบจะลบ/ปกปิดข้อมูลผู้ใช้ออกจากระบบทั้งหมด หากคุณเป็น OWNER คนเดียวของ workspace ใด ระบบจะไม่อนุญาตให้ยกเลิกจนกว่าจะมอบสิทธิ์ OWNER ให้คนอื่นก่อน
       </p>
       <Input label="รหัสผ่านปัจจุบัน" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
       <Input label='พิมพ์ "ยกเลิกบัญชี" เพื่อยืนยัน' value={confirmText} onChange={(event) => setConfirmText(event.target.value)} />

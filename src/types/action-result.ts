@@ -9,4 +9,5 @@ export type ActionResult<T = unknown> =
       message: string;
       errors?: Record<string, string[]>;
       retryAfterSeconds?: number;
+      redirectTo?: string;
     };
