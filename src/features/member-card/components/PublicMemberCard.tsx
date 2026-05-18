@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Image from "next/image";
 import { ReactQRCode } from "@lglab/react-qr-code";
 import { CreditCard, History, IdCard, Search, WalletCards, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { searchPublicMemberCardAction } from "@/features/member-card/actions";
 import { formatThaiDate, formatThaiDateTime } from "@/lib/date";
@@ -21,6 +22,7 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
   const [keyword, setKeyword] = useState("");
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<any | null>(null);
+  const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState("");
 
   function search(value = keyword) {
     const nextKeyword = value.trim();
@@ -29,6 +31,7 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
       const response = await searchPublicMemberCardAction(token, nextKeyword);
       if (!response.success) {
         setResult(null);
+        setSelectedPaymentMethodId("");
         await showError(response.message);
         return;
       }
@@ -36,7 +39,17 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
     });
   }
 
-  const preferredMethod = result?.workspace.paymentMethods.find((method: any) => method.qrImageUrl) ?? result?.workspace.paymentMethods[0];
+  useEffect(() => {
+    if (!result) return;
+    const defaultMethod = result.workspace.paymentMethods.find((method: any) => method.qrImageUrl) ?? result.workspace.paymentMethods[0];
+    setSelectedPaymentMethodId((current) => {
+      const currentStillExists = result.workspace.paymentMethods.some((method: any) => method.id === current);
+      return currentStillExists ? current : (defaultMethod?.id ?? "");
+    });
+  }, [result]);
+
+  const paymentMethods = result?.workspace.paymentMethods ?? [];
+  const preferredMethod = paymentMethods.find((method: any) => method.id === selectedPaymentMethodId) ?? paymentMethods.find((method: any) => method.qrImageUrl) ?? paymentMethods[0];
   const qrValue = preferredMethod
     ? JSON.stringify({
         workspace: result.workspace.name,
@@ -96,6 +109,7 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
                         onClick={() => {
                           setKeyword("");
                           setResult(null);
+                          setSelectedPaymentMethodId("");
                         }}
                         aria-label="ล้างคำค้นหา"
                       >
@@ -122,7 +136,14 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
 
         {result ? (
           <div className="grid gap-4 lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start">
-            <PaymentQrPanel preferredMethod={preferredMethod} qrValue={qrValue} result={result} />
+            <PaymentQrPanel
+              paymentMethods={paymentMethods}
+              preferredMethod={preferredMethod}
+              selectedPaymentMethodId={selectedPaymentMethodId}
+              onPaymentMethodChange={setSelectedPaymentMethodId}
+              qrValue={qrValue}
+              result={result}
+            />
 
             <section className="grid gap-4">
               <MemberIdentity result={result} />
@@ -197,7 +218,21 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
   );
 }
 
-function PaymentQrPanel({ preferredMethod, qrValue, result }: { preferredMethod: any; qrValue: string; result: any }) {
+function PaymentQrPanel({
+  paymentMethods,
+  preferredMethod,
+  selectedPaymentMethodId,
+  onPaymentMethodChange,
+  qrValue,
+  result,
+}: {
+  paymentMethods: any[];
+  preferredMethod: any;
+  selectedPaymentMethodId: string;
+  onPaymentMethodChange: (value: string) => void;
+  qrValue: string;
+  result: any;
+}) {
   return (
     <aside className="order-first rounded-2xl border border-white/80 bg-white/95 p-4 shadow-sm backdrop-blur lg:sticky lg:top-4">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -215,6 +250,19 @@ function PaymentQrPanel({ preferredMethod, qrValue, result }: { preferredMethod:
 
       {preferredMethod ? (
         <div className="grid gap-3">
+          {paymentMethods.length > 1 ? (
+            <Select
+              label="เลือกวิธีชำระเงิน"
+              value={selectedPaymentMethodId}
+              onChange={(event) => onPaymentMethodChange(event.target.value)}
+              className="rounded-xl"
+              options={paymentMethods.map((method) => ({
+                label: method.bankName ? `${method.name} - ${method.bankName}` : method.name,
+                value: method.id,
+              }))}
+            />
+          ) : null}
+
           <div className="mx-auto grid aspect-square w-full max-w-72 place-items-center rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
             {preferredMethod.qrImageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
