@@ -56,6 +56,7 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
         memberCode: result.member.memberCode,
         memberName: result.member.fullName,
         amount: result.totals.outstanding,
+        paymentMethodId: preferredMethod.id,
         method: preferredMethod.name,
         account: preferredMethod.accountNumber,
       })

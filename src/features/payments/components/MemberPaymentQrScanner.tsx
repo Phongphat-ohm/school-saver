@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { Camera, QrCode, X } from "lucide-react";
 import { Scanner, boundingBox } from "@yudiel/react-qr-scanner";
 import { Button } from "@/components/ui/Button";
-import { extractMemberCodeFromQr } from "@/lib/member-qr";
+import { extractMemberPaymentQrPayload, type MemberPaymentQrPayload } from "@/lib/member-qr";
 
-export function MemberPaymentQrScanner({ onScan }: { onScan: (memberCode: string) => void }) {
+export function MemberPaymentQrScanner({ onScan }: { onScan: (payload: MemberPaymentQrPayload) => void }) {
   const [open, setOpen] = useState(false);
   const [locked, setLocked] = useState(false);
   const [error, setError] = useState("");
@@ -58,9 +58,9 @@ export function MemberPaymentQrScanner({ onScan }: { onScan: (memberCode: string
                 onScan={(detectedCodes) => {
                   if (locked) return;
                   const rawValue = detectedCodes[0]?.rawValue;
-                  const memberCode = rawValue ? extractMemberCodeFromQr(rawValue) : null;
+                  const payload = rawValue ? extractMemberPaymentQrPayload(rawValue) : null;
 
-                  if (!memberCode) {
+                  if (!payload?.memberCode) {
                     setError("QR นี้ไม่ใช่ QR สมาชิกของ SchoolSaver");
                     return;
                   }
@@ -68,7 +68,7 @@ export function MemberPaymentQrScanner({ onScan }: { onScan: (memberCode: string
                   setLocked(true);
                   setError("");
                   setOpen(false);
-                  onScan(memberCode);
+                  onScan(payload);
                 }}
                 onError={() => {
                   if (open) {
