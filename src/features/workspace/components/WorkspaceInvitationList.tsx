@@ -27,7 +27,7 @@ export function WorkspaceInvitationList({ invitations }: { invitations: any[] })
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2">
+    <div className="grid gap-3">
       {invitations.map((invitation) => (
         <div key={invitation.id} className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex min-w-0 items-start gap-3">
