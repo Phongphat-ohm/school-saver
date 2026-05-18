@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DashboardCards } from "@/features/dashboard/components/DashboardCards";
 import { OpenRounds } from "@/features/dashboard/components/OpenRounds";
 import { RecentTransactions } from "@/features/dashboard/components/RecentTransactions";
+import { RoundTotals } from "@/features/dashboard/components/RoundTotals";
 import { getDashboardSummaryAction } from "@/features/dashboard/actions";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -20,6 +21,7 @@ export default async function DashboardPage() {
       ) : (
         <div className="grid gap-5">
           <DashboardCards summary={result.data} />
+          <RoundTotals rounds={result.data.roundSummaries} />
           <div className="grid gap-5 xl:grid-cols-2">
             <RecentTransactions transactions={result.data.recentTransactions} />
             <OpenRounds rounds={result.data.openRounds} />

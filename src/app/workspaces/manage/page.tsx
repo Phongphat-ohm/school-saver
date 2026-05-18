@@ -7,6 +7,7 @@ import { WorkspaceDataRefreshButton } from "@/features/workspace/components/Work
 import { SentWorkspaceInvitationList } from "@/features/workspace/components/WorkspaceInvitationList";
 import { WorkspaceInviteForm } from "@/features/workspace/components/WorkspaceInviteForm";
 import { WorkspaceJoinQr } from "@/features/workspace/components/WorkspaceJoinQr";
+import { WorkspaceMemberCardLink } from "@/features/workspace/components/WorkspaceMemberCardLink";
 import { WorkspaceJoinRequestList } from "@/features/workspace/components/WorkspaceJoinRequestList";
 import { WorkspaceMemberList } from "@/features/workspace/components/WorkspaceMemberList";
 import { WorkspaceSettingsForm } from "@/features/settings/components/WorkspaceSettingsForm";
@@ -96,6 +97,14 @@ export default async function WorkspaceManagePage() {
                     <h2 className="text-lg font-bold">QR ขอเข้า workspace</h2>
                   </div>
                   <WorkspaceJoinQr workspaceId={currentWorkspace.id} />
+                </Card>
+
+                <Card>
+                  <div className="mb-4 flex items-center gap-2">
+                    <QrCode size={20} className="text-blue-600" />
+                    <h2 className="text-lg font-bold">URL บัตรสมาชิก</h2>
+                  </div>
+                  <WorkspaceMemberCardLink token={currentWorkspace.memberCardToken} />
                 </Card>
 
                 <Card>

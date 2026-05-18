@@ -7,9 +7,47 @@ import { COLLECT_PAYMENT, requireWorkspaceRole } from "@/lib/permissions";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
 import { errorResult, successResult } from "@/lib/result";
 import { calculateCurrentMemberRound } from "@/lib/fine";
-import { paymentSchema } from "@/features/payments/schemas";
+import { endOfDay, startOfDay } from "@/lib/date";
+import { paymentHistoryFilterSchema, paymentSchema, updatePaymentTransactionSchema } from "@/features/payments/schemas";
 
 const unpaidStatuses = ["UNPAID", "PARTIAL", "OVERDUE", "PARTIAL_OVERDUE"] as const;
+
+async function recalculateMemberRoundAfterTransactionChange(tx: typeof prisma, workspaceId: string, memberRoundId: string) {
+  const memberRound = await tx.memberRound.findFirst({
+    where: { id: memberRoundId, workspaceId },
+    include: { round: true },
+  });
+  if (!memberRound) throw new Error("ไม่พบรายการสมาชิกในรอบนี้");
+
+  const [totals, lastTransaction] = await Promise.all([
+    tx.paymentTransaction.aggregate({
+      where: { workspaceId, memberRoundId },
+      _sum: { amount: true },
+    }),
+    tx.paymentTransaction.findFirst({
+      where: { workspaceId, memberRoundId },
+      select: { paidAt: true },
+      orderBy: { paidAt: "desc" },
+    }),
+  ]);
+
+  const paidAmount = totals._sum.amount ?? 0;
+  const baseStatus = paidAmount > 0 ? ("PARTIAL" as const) : ("UNPAID" as const);
+  const current = calculateCurrentMemberRound({ ...memberRound, paidAmount, fineAmount: 0, status: baseStatus }, memberRound.round, lastTransaction?.paidAt ?? new Date());
+  const completed = current.outstandingAmount <= 0;
+
+  return tx.memberRound.update({
+    where: { id: memberRoundId },
+    data: {
+      paidAmount,
+      fineAmount: current.currentFine,
+      totalRequiredAmount: current.totalRequiredAmount,
+      remainingAmount: current.outstandingAmount,
+      status: current.currentStatus,
+      completedAt: completed ? (lastTransaction?.paidAt ?? new Date()) : null,
+    },
+  });
+}
 
 export async function searchMembersForPaymentAction(keyword = "") {
   try {
@@ -157,6 +195,8 @@ export async function payMemberRoundAction(data: unknown) {
     });
     revalidatePath("/");
     revalidatePath("/payments");
+    revalidatePath("/payments/history");
+    revalidatePath("/overdue");
     revalidatePath("/rounds");
     revalidatePath(`/rounds/${result.memberRound.roundId}`);
     return successResult(result, "บันทึกรับเงินสำเร็จ");
@@ -235,12 +275,80 @@ export async function cancelPaymentTransactionAction(transactionId: string) {
 
     revalidatePath("/");
     revalidatePath("/payments");
+    revalidatePath("/payments/history");
+    revalidatePath("/overdue");
     revalidatePath("/rounds");
     revalidatePath(`/rounds/${result.memberRound.roundId}`);
     revalidatePath("/reports");
     return successResult(result, "ยกเลิกรายการรับเงินสำเร็จ");
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "ไม่สามารถยกเลิกรายการรับเงินได้");
+  }
+}
+
+export async function updatePaymentTransactionAction(transactionId: string, data: unknown) {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(COLLECT_PAYMENT);
+    const parsed = updatePaymentTransactionSchema.safeParse(data);
+    if (!parsed.success) return errorResult("ข้อมูลรายการชำระเงินไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const transaction = await tx.paymentTransaction.findFirst({
+        where: { id: transactionId, workspaceId },
+        include: {
+          member: { select: { fullName: true } },
+          memberRound: { include: { round: true } },
+        },
+      });
+      if (!transaction) throw new Error("ไม่พบรายการชำระเงินใน workspace นี้");
+      if (transaction.memberRound.round.status === "CANCELLED") throw new Error("รอบนี้ถูกยกเลิกแล้ว ไม่สามารถแก้ไขรายการชำระเงินได้");
+
+      const method = await tx.paymentMethod.findFirst({
+        where: { id: parsed.data.paymentMethodId, workspaceId, status: "ACTIVE" },
+      });
+      if (!method) throw new Error("วิธีชำระเงินไม่อยู่ใน workspace นี้");
+
+      const otherTotal = await tx.paymentTransaction.aggregate({
+        where: { workspaceId, memberRoundId: transaction.memberRoundId, NOT: { id: transaction.id } },
+        _sum: { amount: true },
+      });
+      const currentWithoutThis = calculateCurrentMemberRound(
+        { ...transaction.memberRound, paidAmount: otherTotal._sum.amount ?? 0, fineAmount: 0, status: (otherTotal._sum.amount ?? 0) > 0 ? "PARTIAL" : "UNPAID" },
+        transaction.memberRound.round,
+        parsed.data.paidAt,
+      );
+      if (parsed.data.amount > currentWithoutThis.outstandingAmount) throw new Error("จำนวนเงินเกินยอดค้างปัจจุบัน");
+
+      const updatedTransaction = await tx.paymentTransaction.update({
+        where: { id: transaction.id },
+        data: {
+          amount: parsed.data.amount,
+          paymentMethodId: parsed.data.paymentMethodId,
+          paidAt: parsed.data.paidAt,
+          note: parsed.data.note,
+        },
+      });
+      const updatedMemberRound = await recalculateMemberRoundAfterTransactionChange(tx as any, workspaceId, transaction.memberRoundId);
+
+      await writeActivityLog(tx, {
+        workspaceId,
+        userId,
+        action: "UPDATE_PAYMENT",
+        detail: `แก้ไขรายการชำระเงิน ${transaction.member.fullName} จำนวน ${parsed.data.amount}`,
+      });
+
+      return { transaction: updatedTransaction, memberRound: updatedMemberRound };
+    });
+
+    revalidatePath("/");
+    revalidatePath("/payments");
+    revalidatePath("/payments/history");
+    revalidatePath("/overdue");
+    revalidatePath("/reports");
+    revalidatePath(`/rounds/${result.memberRound.roundId}`);
+    return successResult(result, "แก้ไขรายการชำระเงินสำเร็จ");
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถแก้ไขรายการชำระเงินได้");
   }
 }
 
@@ -281,6 +389,52 @@ export async function getMemberRoundTransactionsAction(memberRoundId: string) {
     return successResult(transactions);
   } catch {
     return errorResult("ไม่สามารถดึงประวัติรับเงินได้");
+  }
+}
+
+export async function getPaymentHistoryAction(filters: unknown = {}) {
+  try {
+    const { workspaceId } = await getCurrentWorkspaceOrThrow();
+    const parsed = paymentHistoryFilterSchema.safeParse(filters);
+    if (!parsed.success) return errorResult("ตัวกรองประวัติการชำระเงินไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+
+    const startDate = parsed.data.startDate ? startOfDay(new Date(parsed.data.startDate)) : undefined;
+    const endDate = parsed.data.endDate ? endOfDay(new Date(parsed.data.endDate)) : undefined;
+    const member = parsed.data.member?.trim();
+
+    const transactions = await prisma.paymentTransaction.findMany({
+      where: {
+        workspaceId,
+        roundId: parsed.data.roundId || undefined,
+        paidAt: startDate || endDate ? { gte: startDate, lte: endDate } : undefined,
+        member: member
+          ? {
+              OR: [
+                { fullName: { contains: member, mode: "insensitive" } },
+                { memberCode: { contains: member, mode: "insensitive" } },
+                { studentNo: { contains: member, mode: "insensitive" } },
+                { phone: { contains: member, mode: "insensitive" } },
+              ],
+            }
+          : undefined,
+      },
+      select: {
+        id: true,
+        amount: true,
+        paidAt: true,
+        note: true,
+        member: { select: { id: true, memberCode: true, studentNo: true, fullName: true, classroom: true, phone: true } },
+        round: { select: { id: true, title: true, status: true } },
+        paymentMethod: { select: { id: true, name: true, type: true } },
+        collectedBy: { select: { id: true, fullName: true, username: true } },
+      },
+      orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+      take: 300,
+    });
+
+    return successResult(transactions);
+  } catch {
+    return errorResult("ไม่สามารถดึงประวัติการชำระเงินได้");
   }
 }
 
@@ -327,7 +481,11 @@ export async function getUnpaidAndPartialPaymentsAction(roundId?: string) {
           },
         },
       },
-      orderBy: { remainingAmount: "desc" },
+      orderBy: [
+        { round: { createdAt: "desc" } },
+        { member: { studentNo: "asc" } },
+        { member: { memberCode: "asc" } },
+      ],
     });
     const today = new Date();
     return successResult(rows.map((row) => ({ ...row, current: calculateCurrentMemberRound(row, row.round, today) })));

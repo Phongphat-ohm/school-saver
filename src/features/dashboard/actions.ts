@@ -19,6 +19,7 @@ export async function getDashboardSummaryAction() {
       recentTransactions,
       openRounds,
       topOutstandingMembers,
+      roundSummaries,
     ] = await Promise.all([
       prisma.member.count({ where: { workspaceId, status: "ACTIVE" } }),
       prisma.collectionRound.count({ where: { workspaceId, status: "OPEN" } }),
@@ -71,6 +72,26 @@ export async function getDashboardSummaryAction() {
         orderBy: { remainingAmount: "desc" },
         take: 5,
       }),
+      prisma.collectionRound.findMany({
+        where: { workspaceId },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          dueDate: true,
+          memberRounds: {
+            select: {
+              targetAmount: true,
+              paidAmount: true,
+              fineAmount: true,
+              remainingAmount: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      }),
     ]);
 
     const statusCounts = Object.fromEntries(memberRoundStatuses.map((row) => [row.status, row._count._all]));
@@ -91,6 +112,23 @@ export async function getDashboardSummaryAction() {
       recentTransactions,
       openRounds,
       topOutstandingMembers,
+      roundSummaries: roundSummaries.map((round) => {
+        const paidCount = round.memberRounds.filter((item) => item.status === "PAID" || item.status === "LATE_PAID").length;
+        const outstandingCount = round.memberRounds.filter((item) => item.remainingAmount > 0).length;
+        return {
+          id: round.id,
+          title: round.title,
+          status: round.status,
+          dueDate: round.dueDate,
+          totalMembers: round.memberRounds.length,
+          paidCount,
+          outstandingCount,
+          totalTargetAmount: round.memberRounds.reduce((sum, item) => sum + item.targetAmount, 0),
+          totalPaidAmount: round.memberRounds.reduce((sum, item) => sum + item.paidAmount, 0),
+          totalFineAmount: round.memberRounds.reduce((sum, item) => sum + item.fineAmount, 0),
+          totalOutstandingAmount: round.memberRounds.reduce((sum, item) => sum + item.remainingAmount, 0),
+        };
+      }),
     };
     return successResult(summary);
   } catch {

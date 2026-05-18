@@ -25,7 +25,7 @@ export async function getWorkspaceUsersAction() {
   try {
     const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
     const users = await prisma.workspaceMember.findMany({
-      where: { workspaceId },
+      where: { workspaceId, status: "ACTIVE" },
       include: { user: { select: { id: true, username: true, email: true, emailVerifiedAt: true, fullName: true, status: true } } },
       orderBy: { createdAt: "asc" },
     });
@@ -139,28 +139,16 @@ export async function deleteWorkspaceUserAction(id: string) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const updatedMembership = await tx.workspaceMember.update({
+      const deletedMembership = await tx.workspaceMember.delete({
         where: { id },
-        data: { status: "INACTIVE" },
       });
       await tx.workspaceInvitation.updateMany({
         where: { workspaceId, invitedUserId: membership.userId, status: "PENDING" },
         data: { status: "CANCELLED" },
       });
-
-      const activeMemberships = await tx.workspaceMember.count({
-        where: { userId: membership.userId, status: "ACTIVE" },
-      });
-      const activeOwnedWorkspaces = await tx.workspace.count({
-        where: { ownerId: membership.userId, workspaceMembers: { some: { userId: membership.userId, role: "OWNER", status: "ACTIVE" } } },
-      });
-
-      if (activeMemberships === 0 && activeOwnedWorkspaces === 0) {
-        await tx.user.update({ where: { id: membership.userId }, data: { status: "INACTIVE" } });
-      }
       await writeActivityLog(tx, { workspaceId, userId, action: "DELETE_USER", detail: `ลบผู้ใช้ ${membership.user.fullName} ออกจาก workspace` });
 
-      return updatedMembership;
+      return deletedMembership;
     });
 
     revalidatePath("/users");
