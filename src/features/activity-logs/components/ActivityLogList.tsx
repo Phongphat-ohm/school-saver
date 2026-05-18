@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type React from "react";
 import { Activity, BadgeCheck, CreditCard, FileClock, Search, Settings, ShieldAlert, UsersRound } from "lucide-react";
+import { formatThaiDateTime } from "@/lib/date";
 
 const actionLabels: Record<string, string> = {
   LOGIN: "เข้าสู่ระบบ",
@@ -70,13 +71,6 @@ function getIcon(action: string, outcome: string) {
   if (action.includes("VERIFY")) return categoryIcons.verify;
   if (action.includes("WORKSPACE") || action.includes("PROFILE") || action.includes("PASSWORD")) return categoryIcons.setting;
   return categoryIcons.default;
-}
-
-function formatDateTime(date: Date | string) {
-  return new Intl.DateTimeFormat("th-TH", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(date));
 }
 
 type ActivityLogItem = {
@@ -231,7 +225,7 @@ export function ActivityLogList({ data }: ActivityLogListProps) {
                     </p>
                     {log.userAgent ? <p className="mt-1 line-clamp-1 break-all text-xs text-slate-400">{log.userAgent}</p> : null}
                   </div>
-                  <time className="text-sm font-semibold text-slate-500 sm:text-right">{formatDateTime(log.createdAt)}</time>
+                  <time className="text-sm font-semibold text-slate-500 sm:text-right">{formatThaiDateTime(log.createdAt)}</time>
                 </article>
               );
             })}

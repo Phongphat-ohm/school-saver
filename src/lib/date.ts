@@ -12,6 +12,14 @@ export function formatThaiDate(date: Date | string) {
   }).format(new Date(date));
 }
 
+export function formatThaiDateTime(date: Date | string) {
+  return new Intl.DateTimeFormat("th-TH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    hour12: false,
+  }).format(new Date(date));
+}
+
 export function formatInputDate(date: Date | string) {
   const value = new Date(date);
   const year = value.getFullYear();
