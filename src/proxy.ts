@@ -35,6 +35,9 @@ export default function proxy(request: NextRequest) {
   }
 
   const session = request.cookies.get("school_saver_session")?.value;
+  const restoreSession = request.cookies.get("school_saver_restore_session")?.value;
+  const hasSession = !!session?.startsWith("ss_");
+  const hasRestoreSession = !!restoreSession?.startsWith("ss_");
 
   const isAuthPage = pathname === "/login" || pathname === "/register";
   const isRestorePage = pathname === "/restore-account";
@@ -47,15 +50,15 @@ export default function proxy(request: NextRequest) {
     pathname === "/terms" ||
     pathname === "/privacy";
 
-  if (isRestorePage && !request.cookies.get("school_saver_restore_session")?.value) {
+  if (isRestorePage && !hasRestoreSession) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (!session && !isPublicPage) {
+  if (!hasSession && !isPublicPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (session && (isAuthPage || isRestorePage)) {
+  if (hasSession && (isAuthPage || isRestorePage)) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

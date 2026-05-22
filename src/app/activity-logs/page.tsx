@@ -14,7 +14,6 @@ export default async function ActivityLogsPage({ searchParams }: ActivityLogsPag
     q: getParam(params, "q"),
     action: getParam(params, "action"),
     outcome: getParam(params, "outcome"),
-    userId: getParam(params, "userId"),
     ipAddress: getParam(params, "ipAddress"),
     page: getParam(params, "page"),
     pageSize: getParam(params, "pageSize"),

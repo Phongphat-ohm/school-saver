@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { getActiveSupportSessionForWorkspace } from "@/lib/support-access";
 
 const DEFAULT_FAILURE_WINDOW_MINUTES = 15;
 const DEFAULT_FAILURE_BLOCK_MAX = 10;
@@ -31,12 +32,16 @@ export async function logActivity(input: ActivityLogInput) {
 
 export async function writeActivityLog(client: ActivityLogWriter, input: ActivityLogInput) {
   const metadata = await getRequestActivityMetadata();
+  const supportSession = input.workspaceId ? await getActiveSupportSessionForWorkspace(input.workspaceId) : null;
+  const detail = supportSession
+    ? `[SUPPORT:${supportSession.id}:${supportSession.mode}] ${input.detail ?? ""}`.trim()
+    : input.detail;
   await client.activityLog.create({
     data: {
       workspaceId: input.workspaceId ?? null,
       userId: input.userId ?? null,
       action: input.action,
-      detail: input.detail,
+      detail,
       outcome: input.outcome ?? "SUCCESS",
       ipAddress: input.ipAddress ?? metadata.ipAddress,
       userAgent: input.userAgent ?? metadata.userAgent,

@@ -60,7 +60,7 @@ export default async function SettingsPage() {
             {workspace.success ? (
               <div className="grid gap-4">
                 <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  <p><b className="text-slate-950">Role:</b> {roleLabels[workspace.data.role]}</p>
+                  <p><b className="text-slate-950">Role:</b> {roleLabels[workspace.data.role as keyof typeof roleLabels]}</p>
                   <p className="mt-1"><b className="text-slate-950">พื้นที่:</b> {workspace.data.name}</p>
                 </div>
                 <WorkspaceSettingsForm workspace={workspace.data} />

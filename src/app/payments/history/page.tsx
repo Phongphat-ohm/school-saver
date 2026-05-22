@@ -9,7 +9,7 @@ import { getCollectionRoundsAction } from "@/features/rounds/actions";
 export default async function PaymentHistoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ roundId?: string; member?: string; startDate?: string; endDate?: string }>;
+  searchParams: Promise<{ roundId?: string; member?: string; startDate?: string; endDate?: string; sortBy?: string; sortDir?: string; page?: string; pageSize?: string }>;
 }) {
   const filters = await searchParams;
   const [historyResult, roundsResult, methodsResult] = await Promise.all([
@@ -30,7 +30,14 @@ export default async function PaymentHistoryPage({
             <p className="text-sm text-slate-500">กรอง แก้ไข และลบรายการชำระเงินแยกตามรอบเก็บเงิน</p>
           </div>
           {historyResult.success ? (
-            <PaymentHistory transactions={historyResult.data} rounds={rounds} paymentMethods={paymentMethods} filters={filters} />
+            <PaymentHistory
+              transactions={historyResult.data.rows}
+              rounds={rounds}
+              paymentMethods={paymentMethods}
+              filters={historyResult.data.filters}
+              summary={historyResult.data.summary}
+              pagination={historyResult.data.pagination}
+            />
           ) : (
             <EmptyState title="ไม่สามารถโหลดประวัติการชำระเงินได้" description={historyResult.message} />
           )}

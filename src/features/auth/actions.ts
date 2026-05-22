@@ -6,11 +6,12 @@ import { issueEmailVerificationOtp, verifyEmailOtp } from "@/lib/email-verificat
 import { getPasswordResetTokenStatus, hashPasswordResetToken, issuePasswordResetLink } from "@/lib/password-reset";
 import { createRestoreSession, createSession, destroySession, getSession } from "@/lib/session";
 import { hashPassword, verifyPassword } from "@/lib/password";
-import { isRequestIpBlocked, logActivity, logSecurityFailure } from "@/lib/activity-log";
+import { isRequestIpBlocked, logActivity, logSecurityFailure, writeActivityLog } from "@/lib/activity-log";
 import { errorResult, successResult } from "@/lib/result";
 import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema, verifyEmailOtpSchema } from "@/features/auth/schemas";
 import { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION } from "@/constants/legal";
 import { purgeExpiredCancelledUsers } from "@/features/users/actions";
+import { getOtpRateLimitSeconds, isMaintenanceModeEnabled } from "@/lib/platform-settings";
 
 export async function loginAction(username: string, password: string) {
   try {
@@ -27,7 +28,7 @@ export async function loginAction(username: string, password: string) {
       where: { username: parsed.data.username },
       include: {
         workspaceMemberships: {
-          where: { status: "ACTIVE" },
+          where: { status: "ACTIVE", workspace: { status: "ACTIVE" } },
           include: { workspace: true },
           orderBy: { createdAt: "asc" },
         },
@@ -52,6 +53,9 @@ export async function loginAction(username: string, password: string) {
       await logSecurityFailure({ userId: user.id, action: "LOGIN_FAILED", detail: `Inactive username: ${parsed.data.username}` });
       return errorResult("บัญชีนี้ถูกยกเลิกหรือปิดใช้งานแล้ว");
     }
+    if (user.role !== "SUPER_ADMIN" && await isMaintenanceModeEnabled()) {
+      return errorResult("ระบบอยู่ระหว่างปิดปรับปรุง กรุณาลองใหม่ภายหลัง");
+    }
 
     const membership = user.workspaceMemberships[0] ?? null;
     await createSession(user.id, membership?.workspaceId ?? null);
@@ -74,6 +78,7 @@ export async function loginAction(username: string, password: string) {
 export async function registerAction(data: unknown) {
   try {
     await purgeExpiredCancelledUsers();
+    if (await isMaintenanceModeEnabled()) return errorResult("ระบบอยู่ระหว่างปิดปรับปรุง กรุณาลองใหม่ภายหลัง");
     const parsed = registerSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลสมัครสมาชิกไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const exists = await prisma.user.findFirst({
@@ -102,14 +107,20 @@ export async function registerAction(data: unknown) {
     });
 
     await createSession(user.id, null);
+    await logActivity({
+      userId: user.id,
+      action: "REGISTER",
+      detail: `สมัครสมาชิกด้วย username: ${user.username}${user.email ? `, email: ${user.email}` : ""}`,
+    });
     let message = "สมัครสมาชิกสำเร็จ";
     let emailVerificationOtpSent = false;
     let emailVerificationRetryAfterSeconds = 0;
     if (user.email) {
       try {
         await issueEmailVerificationOtp(user.id, user.email);
+        await logActivity({ userId: user.id, action: "SEND_EMAIL_VERIFICATION_OTP", detail: `ส่ง OTP ยืนยันอีเมล ${user.email}` });
         emailVerificationOtpSent = true;
-        emailVerificationRetryAfterSeconds = 60;
+        emailVerificationRetryAfterSeconds = await getOtpRateLimitSeconds();
         message = "สมัครสมาชิกสำเร็จ ส่งรหัส OTP ไปที่อีเมลแล้ว";
       } catch {
         message = "สมัครสมาชิกสำเร็จ แต่ยังส่งรหัส OTP ไม่สำเร็จ กรุณาขอรหัสใหม่อีกครั้ง";
@@ -148,6 +159,11 @@ export async function requestPasswordResetAction(data: unknown) {
     if (user?.email) {
       const resetUrlBase = process.env.APP_URL ?? "http://localhost:3000";
       const resetLink = await issuePasswordResetLink({ userId: user.id, email: user.email, resetUrlBase });
+      await logActivity({
+        userId: user.id,
+        action: resetLink.sent ? "REQUEST_PASSWORD_RESET" : "REQUEST_PASSWORD_RESET_REUSED",
+        detail: `ขอลิงก์เปลี่ยนรหัสผ่านสำหรับ ${user.email}`,
+      });
       if (!resetLink.sent) {
         return successResult(
           { sent: false },
@@ -197,6 +213,7 @@ export async function resetPasswordWithTokenAction(data: unknown) {
         where: { userId: token.userId, usedAt: null },
         data: { usedAt: new Date() },
       });
+      await writeActivityLog(tx, { userId: token.userId, action: "RESET_PASSWORD_WITH_TOKEN", detail: "เปลี่ยนรหัสผ่านผ่านลิงก์ reset password" });
     });
 
     return successResult({ reset: true }, "เปลี่ยนรหัสผ่านสำเร็จ");
@@ -206,6 +223,10 @@ export async function resetPasswordWithTokenAction(data: unknown) {
 }
 
 export async function logoutAction() {
+  const session = await getSession();
+  if (session) {
+    await logActivity({ workspaceId: session.currentWorkspaceId, userId: session.userId, action: "LOGOUT", detail: "ออกจากระบบ" });
+  }
   await destroySession();
   redirect("/login");
 }
@@ -225,24 +246,26 @@ export async function sendRegisteredEmailVerificationOtpAction() {
     if (!user.email) return errorResult("กรุณาเพิ่มอีเมลก่อนขอรหัส OTP");
     if (user.emailVerifiedAt) return errorResult("อีเมลนี้ยืนยันแล้ว");
 
+    const otpRateLimitSeconds = await getOtpRateLimitSeconds();
     const activeOtp = await prisma.emailVerificationOtp.findFirst({
       where: {
         userId: user.id,
         email: user.email,
         verifiedAt: null,
         expiresAt: { gt: new Date() },
-        sentAt: { gt: new Date(Date.now() - 60 * 1000) },
+        ...(otpRateLimitSeconds > 0 ? { sentAt: { gt: new Date(Date.now() - otpRateLimitSeconds * 1000) } } : {}),
       },
       orderBy: { sentAt: "desc" },
       select: { sentAt: true },
     });
     if (activeOtp) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((activeOtp.sentAt.getTime() + 60 * 1000 - Date.now()) / 1000));
+      const retryAfterSeconds = Math.max(1, Math.ceil((activeOtp.sentAt.getTime() + otpRateLimitSeconds * 1000 - Date.now()) / 1000));
       return errorResult("กรุณารอสักครู่ก่อนขอรหัส OTP ใหม่", undefined, { retryAfterSeconds });
     }
 
     await issueEmailVerificationOtp(user.id, user.email);
-    return successResult({ sent: true, retryAfterSeconds: 60 }, "ส่งรหัส OTP ไปที่อีเมลแล้ว");
+    await logActivity({ workspaceId: session.currentWorkspaceId, userId: user.id, action: "SEND_EMAIL_VERIFICATION_OTP", detail: `ส่ง OTP ยืนยันอีเมล ${user.email}` });
+    return successResult({ sent: true, retryAfterSeconds: otpRateLimitSeconds }, "ส่งรหัส OTP ไปที่อีเมลแล้ว");
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "ไม่สามารถส่งรหัส OTP ได้");
   }
@@ -268,6 +291,7 @@ export async function verifyRegisteredEmailOtpAction(data: unknown) {
 
     const result = await verifyEmailOtp(user.id, user.email, parsed.data.code);
     if (!result.ok) return errorResult(result.message);
+    await logActivity({ workspaceId: session.currentWorkspaceId, userId: user.id, action: "VERIFY_EMAIL", detail: `ยืนยันอีเมล ${user.email}` });
     return successResult({ verified: true }, "ยืนยันอีเมลสำเร็จ");
   } catch {
     return errorResult("ไม่สามารถยืนยันอีเมลได้");
@@ -280,12 +304,13 @@ export async function getCurrentUserAction() {
     if (!session) return errorResult("กรุณาเข้าสู่ระบบ");
     const user = await prisma.user.findFirst({
       where: { id: session.userId, status: "ACTIVE" },
-      select: { id: true, username: true, email: true, emailVerifiedAt: true, fullName: true, status: true },
+      select: { id: true, username: true, email: true, emailVerifiedAt: true, fullName: true, role: true, status: true },
     });
     if (!user) {
       await destroySession();
       return errorResult("ไม่พบผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
     }
+    if (user.role !== "SUPER_ADMIN" && await isMaintenanceModeEnabled()) return errorResult("ระบบอยู่ระหว่างปิดปรับปรุง กรุณาลองใหม่ภายหลัง");
     return successResult(user);
   } catch {
     return errorResult("ไม่สามารถดึงข้อมูลผู้ใช้ได้");
@@ -306,6 +331,7 @@ export async function acceptLegalAction() {
         privacyVersion: LEGAL_PRIVACY_VERSION,
       },
     });
+    await logActivity({ workspaceId: session.currentWorkspaceId, userId: session.userId, action: "ACCEPT_LEGAL", detail: `ยอมรับ terms ${LEGAL_TERMS_VERSION}, privacy ${LEGAL_PRIVACY_VERSION}` });
 
     return successResult(null, "บันทึกการยอมรับเงื่อนไขและนโยบายความเป็นส่วนตัวแล้ว");
   } catch {

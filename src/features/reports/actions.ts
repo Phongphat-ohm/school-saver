@@ -16,19 +16,62 @@ function getDateRange(startDate: Date, endDate: Date) {
   return dates;
 }
 
-export async function getReportDashboardAction(startDate?: Date, endDate?: Date) {
+type ReportDashboardFilters = {
+  from?: string;
+  to?: string;
+  q?: string;
+  roundId?: string;
+  paymentMethodId?: string;
+  collectedById?: string;
+  minAmount?: string;
+  maxAmount?: string;
+  page?: string;
+  pageSize?: string;
+  startDate?: Date;
+  endDate?: Date;
+};
+
+export async function getReportDashboardAction(filters: ReportDashboardFilters = {}) {
   try {
     const { workspaceId, role } = await getCurrentWorkspaceOrThrow();
-    const rangeEnd = endOfDay(endDate ?? new Date());
-    const rangeStart = startOfDay(startDate ?? addCalendarDays(rangeEnd, -29));
-    const where = { workspaceId, paidAt: { gte: rangeStart, lte: rangeEnd } };
+    const parsedStartDate = filters.startDate instanceof Date ? filters.startDate : undefined;
+    const parsedEndDate = filters.endDate instanceof Date ? filters.endDate : undefined;
+    const rangeEnd = endOfDay(parsedEndDate ?? new Date());
+    const rangeStart = startOfDay(parsedStartDate ?? addCalendarDays(rangeEnd, -29));
+    const page = Math.max(1, Math.floor(Number(filters.page ?? 1) || 1));
+    const pageSize = Math.min(100, Math.max(10, Math.floor(Number(filters.pageSize ?? 25) || 25)));
+    const skip = (page - 1) * pageSize;
+    const minAmount = filters.minAmount ? Number(filters.minAmount) : undefined;
+    const maxAmount = filters.maxAmount ? Number(filters.maxAmount) : undefined;
+    const q = filters.q?.trim();
+    const where = {
+      workspaceId,
+      paidAt: { gte: rangeStart, lte: rangeEnd },
+      ...(filters.roundId ? { roundId: filters.roundId } : {}),
+      ...(filters.paymentMethodId ? { paymentMethodId: filters.paymentMethodId } : {}),
+      ...(filters.collectedById ? { collectedById: filters.collectedById } : {}),
+      ...(Number.isFinite(minAmount) || Number.isFinite(maxAmount)
+        ? { amount: { ...(Number.isFinite(minAmount) ? { gte: minAmount } : {}), ...(Number.isFinite(maxAmount) ? { lte: maxAmount } : {}) } }
+        : {}),
+      ...(q
+        ? {
+            OR: [
+              { note: { contains: q, mode: "insensitive" as const } },
+              { member: { fullName: { contains: q, mode: "insensitive" as const } } },
+              { member: { memberCode: { contains: q, mode: "insensitive" as const } } },
+              { member: { studentNo: { contains: q, mode: "insensitive" as const } } },
+            ],
+          }
+        : {}),
+    };
 
-    const [totals, transactions, outstandingTotals, activeRoundCount] = await Promise.all([
+    const [totals, transactionCount, transactions, outstandingTotals, activeRoundCount, methodGroups, roundGroups, collectorGroups, rounds, paymentMethods, collectors] = await Promise.all([
       prisma.paymentTransaction.aggregate({
         where,
         _sum: { amount: true },
         _count: { _all: true },
       }),
+      prisma.paymentTransaction.count({ where }),
       prisma.paymentTransaction.findMany({
         where,
         select: {
@@ -42,6 +85,8 @@ export async function getReportDashboardAction(startDate?: Date, endDate?: Date)
           collectedBy: { select: { id: true, fullName: true, username: true } },
         },
         orderBy: { paidAt: "desc" },
+        skip,
+        take: pageSize,
       }),
       prisma.memberRound.aggregate({
         where: { workspaceId, remainingAmount: { gt: 0 }, round: { status: "OPEN" } },
@@ -49,55 +94,86 @@ export async function getReportDashboardAction(startDate?: Date, endDate?: Date)
         _count: { _all: true },
       }),
       prisma.collectionRound.count({ where: { workspaceId, status: "OPEN" } }),
+      prisma.paymentTransaction.groupBy({
+        by: ["paymentMethodId"],
+        where,
+        _sum: { amount: true },
+        _count: { _all: true },
+        orderBy: { _sum: { amount: "desc" } },
+      }),
+      prisma.paymentTransaction.groupBy({
+        by: ["roundId"],
+        where,
+        _sum: { amount: true },
+        _count: { _all: true },
+        orderBy: { _sum: { amount: "desc" } },
+        take: 8,
+      }),
+      prisma.paymentTransaction.groupBy({
+        by: ["collectedById"],
+        where,
+        _sum: { amount: true },
+        _count: { _all: true },
+        orderBy: { _sum: { amount: "desc" } },
+      }),
+      prisma.collectionRound.findMany({ where: { workspaceId }, select: { id: true, title: true }, orderBy: { createdAt: "desc" }, take: 300 }),
+      prisma.paymentMethod.findMany({ where: { workspaceId }, select: { id: true, name: true, type: true }, orderBy: { name: "asc" }, take: 100 }),
+      prisma.user.findMany({
+        where: { collectedTransactions: { some: { workspaceId } } },
+        select: { id: true, fullName: true, username: true },
+        orderBy: { fullName: "asc" },
+        take: 200,
+      }),
     ]);
 
+    const chartRangeStart = rangeStart > addCalendarDays(rangeEnd, -89) ? rangeStart : startOfDay(addCalendarDays(rangeEnd, -89));
     const dailyMap = new Map<string, { label: string; amount: number; count: number }>();
-    for (const dateKey of getDateRange(rangeStart, rangeEnd)) dailyMap.set(dateKey, { label: dateKey, amount: 0, count: 0 });
-
-    const methodMap = new Map<string, { label: string; amount: number; count: number }>();
-    const roundMap = new Map<string, { label: string; amount: number; count: number }>();
-    const collectorMap = new Map<string, { label: string; amount: number; count: number }>();
-
-    for (const transaction of transactions) {
-      const dateKey = toDateKey(transaction.paidAt);
-      const daily = dailyMap.get(dateKey) ?? { label: dateKey, amount: 0, count: 0 };
-      daily.amount += transaction.amount;
-      daily.count += 1;
-      dailyMap.set(dateKey, daily);
-
-      const method = methodMap.get(transaction.paymentMethod.name) ?? { label: transaction.paymentMethod.name, amount: 0, count: 0 };
-      method.amount += transaction.amount;
-      method.count += 1;
-      methodMap.set(transaction.paymentMethod.name, method);
-
-      const round = roundMap.get(transaction.round.title) ?? { label: transaction.round.title, amount: 0, count: 0 };
-      round.amount += transaction.amount;
-      round.count += 1;
-      roundMap.set(transaction.round.title, round);
-
-      const collectorName = transaction.collectedBy.fullName || transaction.collectedBy.username;
-      const collector = collectorMap.get(collectorName) ?? { label: collectorName, amount: 0, count: 0 };
-      collector.amount += transaction.amount;
-      collector.count += 1;
-      collectorMap.set(collectorName, collector);
-    }
+    for (const dateKey of getDateRange(chartRangeStart, rangeEnd)) dailyMap.set(dateKey, { label: dateKey, amount: 0, count: 0 });
+    await Promise.all(
+      Array.from(dailyMap.keys()).map(async (dateKey) => {
+        const dayStart = startOfDay(new Date(dateKey));
+        const dayEnd = endOfDay(new Date(dateKey));
+        const dayTotals = await prisma.paymentTransaction.aggregate({
+          where: { ...where, paidAt: { gte: dayStart, lte: dayEnd } },
+          _sum: { amount: true },
+          _count: { _all: true },
+        });
+        dailyMap.set(dateKey, { label: dateKey, amount: dayTotals._sum.amount ?? 0, count: dayTotals._count._all });
+      }),
+    );
 
     const sortByAmount = (a: { amount: number }, b: { amount: number }) => b.amount - a.amount;
+    const methodNames = new Map(paymentMethods.map((method) => [method.id, method.name]));
+    const roundNames = new Map(rounds.map((round) => [round.id, round.title]));
+    const collectorNames = new Map(collectors.map((collector) => [collector.id, collector.fullName || collector.username]));
 
     return successResult({
       startDate: rangeStart,
       endDate: rangeEnd,
       totalAmount: totals._sum.amount ?? 0,
-      transactionCount: totals._count._all,
-      averageTransactionAmount: totals._count._all ? Math.round((totals._sum.amount ?? 0) / totals._count._all) : 0,
+      transactionCount: transactionCount,
+      averageTransactionAmount: transactionCount ? Math.round((totals._sum.amount ?? 0) / transactionCount) : 0,
       outstandingAmount: outstandingTotals._sum.remainingAmount ?? 0,
       outstandingCount: outstandingTotals._count._all,
       activeRoundCount,
       dailySeries: Array.from(dailyMap.values()),
-      paymentMethodSeries: Array.from(methodMap.values()).sort(sortByAmount),
-      roundSeries: Array.from(roundMap.values()).sort(sortByAmount).slice(0, 8),
-      collectorSeries: Array.from(collectorMap.values()).sort(sortByAmount),
+      paymentMethodSeries: methodGroups.map((row) => ({ label: methodNames.get(row.paymentMethodId) ?? "Unknown", amount: row._sum.amount ?? 0, count: row._count._all })).sort(sortByAmount),
+      roundSeries: roundGroups.map((row) => ({ label: roundNames.get(row.roundId) ?? "Unknown", amount: row._sum.amount ?? 0, count: row._count._all })).sort(sortByAmount),
+      collectorSeries: collectorGroups.map((row) => ({ label: collectorNames.get(row.collectedById) ?? "Unknown", amount: row._sum.amount ?? 0, count: row._count._all })).sort(sortByAmount),
       transactions,
+      pagination: { page, pageSize, total: transactionCount, totalPages: Math.max(1, Math.ceil(transactionCount / pageSize)) },
+      filters: {
+        from: filters.from ?? "",
+        to: filters.to ?? "",
+        q: filters.q ?? "",
+        roundId: filters.roundId ?? "",
+        paymentMethodId: filters.paymentMethodId ?? "",
+        collectedById: filters.collectedById ?? "",
+        minAmount: filters.minAmount ?? "",
+        maxAmount: filters.maxAmount ?? "",
+        pageSize: String(pageSize),
+      },
+      filterOptions: { rounds, paymentMethods, collectors },
       canCancelPayments: role === "OWNER" || role === "ADMIN" || role === "COLLECTOR",
     });
   } catch {

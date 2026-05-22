@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SchoolSaver",
+  title: "SchoolSaver | สคูลเซฟเวอร์",
   description: "ระบบเก็บเงินห้องอัจฉริยะ",
 };
 
