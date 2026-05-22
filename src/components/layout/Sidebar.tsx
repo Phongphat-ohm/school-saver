@@ -11,13 +11,14 @@ import {
   LayoutDashboard,
   LogOut,
   Settings,
+  ShieldCheck,
   UserCog,
   UsersRound,
   WalletCards,
 } from "lucide-react";
 import { logoutAction } from "@/features/auth/actions";
 import { getNavigationItemsForRole, navigationGroups } from "@/constants/routes";
-import { getCurrentWorkspaceRole } from "@/lib/permissions";
+import { getCurrentWorkspaceRole, isSuperAdmin } from "@/lib/permissions";
 
 const icons = {
   LayoutDashboard,
@@ -32,10 +33,11 @@ const icons = {
   History,
   BookOpenText,
   Settings,
+  ShieldCheck,
 };
 
 export async function Sidebar() {
-  const role = await getCurrentWorkspaceRole();
+  const [role, superAdmin] = await Promise.all([getCurrentWorkspaceRole(), isSuperAdmin()]);
   const visibleItems = getNavigationItemsForRole(role);
 
   return (
@@ -56,6 +58,18 @@ export async function Sidebar() {
           </div>
         </div>
         <nav className="sidebar-scrollbar grid flex-1 content-start gap-5 overflow-y-auto pr-2">
+          {superAdmin ? (
+            <div>
+              <p className="mb-2 px-3 text-xs font-black tracking-wide text-slate-400">Platform</p>
+              <Link
+                href="/admin"
+                className="group flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[15px] font-semibold text-emerald-100 transition hover:bg-white/10 hover:text-white"
+              >
+                <ShieldCheck size={19} className="text-emerald-300 transition group-hover:text-emerald-200" />
+                <span>Super Admin</span>
+              </Link>
+            </div>
+          ) : null}
           {navigationGroups.map((group) => (
             <div key={group}>
               <p className="mb-2 px-3 text-xs font-black tracking-wide text-slate-400">{group}</p>

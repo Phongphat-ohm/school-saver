@@ -17,15 +17,15 @@ export type ActivityLogQueryInput = {
   q?: string;
   action?: string;
   outcome?: string;
-  userId?: string;
   ipAddress?: string;
 };
 
 export async function getActivityLogsAction(input: ActivityLogQueryInput = {}) {
   try {
-    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const filters = normalizeActivityLogFilters(input);
     const baseWhere: Prisma.ActivityLogWhereInput = {
+      userId,
       OR: [{ workspaceId }, { workspaceId: null }],
     };
     const where: Prisma.ActivityLogWhereInput = {
@@ -33,7 +33,6 @@ export async function getActivityLogsAction(input: ActivityLogQueryInput = {}) {
         baseWhere,
         filters.action ? { action: filters.action } : {},
         filters.outcome ? { outcome: filters.outcome } : {},
-        filters.userId ? { userId: filters.userId } : {},
         filters.ipAddress ? { ipAddress: { contains: filters.ipAddress } } : {},
         filters.q
           ? {
@@ -58,7 +57,7 @@ export async function getActivityLogsAction(input: ActivityLogQueryInput = {}) {
     const skip = (page - 1) * filters.pageSize;
     const take = Math.max(0, Math.min(filters.pageSize, filters.maxCount - skip));
 
-    const [logs, actionRows, users] = await Promise.all([
+    const [logs, actionRows] = await Promise.all([
       take
         ? prisma.activityLog.findMany({
             where,
@@ -74,16 +73,6 @@ export async function getActivityLogsAction(input: ActivityLogQueryInput = {}) {
         by: ["action"],
         where: baseWhere,
         orderBy: { action: "asc" },
-      }),
-      prisma.user.findMany({
-        where: {
-          OR: [
-            { activityLogs: { some: { workspaceId } } },
-            { workspaceMemberships: { some: { workspaceId, status: "ACTIVE" } } },
-          ],
-        },
-        select: { id: true, username: true, fullName: true, email: true },
-        orderBy: { fullName: "asc" },
       }),
     ]);
 
@@ -102,7 +91,6 @@ export async function getActivityLogsAction(input: ActivityLogQueryInput = {}) {
       },
       options: {
         actions: actionRows.map((row) => row.action),
-        users,
         outcomes: ["SUCCESS", "FAILURE", "BLOCKED"],
       },
     });
@@ -119,7 +107,6 @@ function normalizeActivityLogFilters(input: ActivityLogQueryInput) {
     q: normalizeText(input.q),
     action: normalizeText(input.action),
     outcome: normalizeText(input.outcome),
-    userId: normalizeText(input.userId),
     ipAddress: normalizeText(input.ipAddress),
   };
 }

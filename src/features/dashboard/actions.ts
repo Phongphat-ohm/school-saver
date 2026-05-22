@@ -19,7 +19,7 @@ export async function getDashboardSummaryAction() {
       recentTransactions,
       openRounds,
       topOutstandingMembers,
-      roundSummaries,
+      recentRounds,
     ] = await Promise.all([
       prisma.member.count({ where: { workspaceId, status: "ACTIVE" } }),
       prisma.collectionRound.count({ where: { workspaceId, status: "OPEN" } }),
@@ -79,15 +79,6 @@ export async function getDashboardSummaryAction() {
           title: true,
           status: true,
           dueDate: true,
-          memberRounds: {
-            select: {
-              targetAmount: true,
-              paidAmount: true,
-              fineAmount: true,
-              remainingAmount: true,
-              status: true,
-            },
-          },
         },
         orderBy: { createdAt: "desc" },
         take: 20,
@@ -95,6 +86,34 @@ export async function getDashboardSummaryAction() {
     ]);
 
     const statusCounts = Object.fromEntries(memberRoundStatuses.map((row) => [row.status, row._count._all]));
+    const recentRoundIds = recentRounds.map((round) => round.id);
+    const [roundTotalGroups, roundStatusGroups] = recentRoundIds.length
+      ? await Promise.all([
+          prisma.memberRound.groupBy({
+            by: ["roundId"],
+            where: { workspaceId, roundId: { in: recentRoundIds } },
+            _sum: {
+              targetAmount: true,
+              paidAmount: true,
+              fineAmount: true,
+              remainingAmount: true,
+            },
+            _count: { _all: true },
+          }),
+          prisma.memberRound.groupBy({
+            by: ["roundId", "status"],
+            where: { workspaceId, roundId: { in: recentRoundIds } },
+            _count: { _all: true },
+          }),
+        ])
+      : [[], []];
+    const roundTotalsById = new Map(roundTotalGroups.map((row) => [row.roundId, row]));
+    const roundStatusesById = new Map<string, Record<string, number>>();
+    for (const row of roundStatusGroups) {
+      const counts = roundStatusesById.get(row.roundId) ?? {};
+      counts[row.status] = row._count._all;
+      roundStatusesById.set(row.roundId, counts);
+    }
 
     const summary = {
       totalMembers,
@@ -112,21 +131,23 @@ export async function getDashboardSummaryAction() {
       recentTransactions,
       openRounds,
       topOutstandingMembers,
-      roundSummaries: roundSummaries.map((round) => {
-        const paidCount = round.memberRounds.filter((item) => item.status === "PAID" || item.status === "LATE_PAID").length;
-        const outstandingCount = round.memberRounds.filter((item) => item.remainingAmount > 0).length;
+      roundSummaries: recentRounds.map((round) => {
+        const totals = roundTotalsById.get(round.id);
+        const counts = roundStatusesById.get(round.id) ?? {};
+        const paidCount = (counts.PAID ?? 0) + (counts.LATE_PAID ?? 0);
+        const outstandingCount = (totals?._count._all ?? 0) - paidCount - (counts.WAIVED ?? 0);
         return {
           id: round.id,
           title: round.title,
           status: round.status,
           dueDate: round.dueDate,
-          totalMembers: round.memberRounds.length,
+          totalMembers: totals?._count._all ?? 0,
           paidCount,
           outstandingCount,
-          totalTargetAmount: round.memberRounds.reduce((sum, item) => sum + item.targetAmount, 0),
-          totalPaidAmount: round.memberRounds.reduce((sum, item) => sum + item.paidAmount, 0),
-          totalFineAmount: round.memberRounds.reduce((sum, item) => sum + item.fineAmount, 0),
-          totalOutstandingAmount: round.memberRounds.reduce((sum, item) => sum + item.remainingAmount, 0),
+          totalTargetAmount: totals?._sum.targetAmount ?? 0,
+          totalPaidAmount: totals?._sum.paidAmount ?? 0,
+          totalFineAmount: totals?._sum.fineAmount ?? 0,
+          totalOutstandingAmount: totals?._sum.remainingAmount ?? 0,
         };
       }),
     };

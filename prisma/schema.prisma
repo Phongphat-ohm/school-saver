@@ -15,6 +15,11 @@ enum UserStatus {
   INACTIVE
 }
 
+enum UserRole {
+  USER
+  SUPER_ADMIN
+}
+
 enum WorkspaceRole {
   OWNER
   ADMIN
@@ -23,6 +28,11 @@ enum WorkspaceRole {
 }
 
 enum WorkspaceMemberStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WorkspaceStatus {
   ACTIVE
   INACTIVE
 }
@@ -76,6 +86,36 @@ enum WorkspaceInvitationStatus {
   CANCELLED
 }
 
+enum NotificationType {
+  SYSTEM
+  WORKSPACE
+  INVITATION
+  JOIN_REQUEST
+  PAYMENT
+  REPORT
+}
+
+enum SupportSessionMode {
+  READ_ONLY
+  FULL_SUPPORT
+}
+
+enum SupportSessionStatus {
+  ACTIVE
+  ENDED
+}
+
+enum ScheduledAnnouncementStatus {
+  SCHEDULED
+  SENT
+  CANCELLED
+}
+
+enum AppSessionKind {
+  AUTH
+  RESTORE
+}
+
 model User {
   id                    String               @id @default(cuid())
   username              String               @unique
@@ -83,6 +123,7 @@ model User {
   emailVerifiedAt       DateTime?
   passwordHash          String
   fullName              String
+  role                  UserRole             @default(USER)
   status                UserStatus           @default(ACTIVE)
   termsAcceptedAt       DateTime?
   termsVersion          String?
@@ -100,11 +141,35 @@ model User {
   createdRounds         CollectionRound[]    @relation("RoundCreator")
   sentWorkspaceInvites  WorkspaceInvitation[] @relation("WorkspaceInviteSender")
   receivedWorkspaceInvites WorkspaceInvitation[] @relation("WorkspaceInviteReceiver")
+  notifications         Notification[]
+  supportSessions       SuperAdminSupportSession[] @relation("SupportSessionActor")
+  announcementTemplates AnnouncementTemplate[] @relation("AnnouncementTemplateCreator")
+  recipientGroups       RecipientGroup[] @relation("RecipientGroupCreator")
+  scheduledAnnouncements ScheduledAnnouncement[] @relation("ScheduledAnnouncementCreator")
+  recipientGroupMembers RecipientGroupMember[]
   emailVerificationOtps EmailVerificationOtp[]
   passwordResetTokens   PasswordResetToken[]
+  appSessions           AppSession[]
 
   @@index([status, restoreUntil])
+  @@index([role, status])
   @@index([anonymizedAt])
+}
+
+model AppSession {
+  id                 String         @id @default(cuid())
+  tokenHash          String         @unique
+  kind               AppSessionKind @default(AUTH)
+  userId             String
+  currentWorkspaceId String?
+  expiresAt          DateTime
+  revokedAt          DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, expiresAt])
+  @@index([kind, expiresAt, revokedAt])
 }
 
 model EmailVerificationOtp {
@@ -141,6 +206,7 @@ model Workspace {
   id                  String               @id @default(cuid())
   name                String
   description         String?
+  status              WorkspaceStatus      @default(ACTIVE)
   memberCardToken     String               @unique @default(cuid())
   ownerId             String
   createdAt           DateTime             @default(now())
@@ -154,6 +220,148 @@ model Workspace {
   activityLogs        ActivityLog[]
   workspaceMembers    WorkspaceMember[]
   invitations         WorkspaceInvitation[]
+  notifications       Notification[]
+  supportSessions     SuperAdminSupportSession[]
+  featureFlags        WorkspaceFeatureFlag[]
+  limits              WorkspaceLimit[]
+  scheduledAnnouncements ScheduledAnnouncement[]
+
+  @@index([status, createdAt])
+}
+
+model AnnouncementTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  title       String
+  message     String
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   User     @relation("AnnouncementTemplateCreator", fields: [createdById], references: [id])
+
+  @@index([createdById, updatedAt])
+}
+
+model RecipientGroup {
+  id          String                 @id @default(cuid())
+  name        String
+  description String?
+  createdById String
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  createdBy   User                   @relation("RecipientGroupCreator", fields: [createdById], references: [id])
+  members     RecipientGroupMember[]
+
+  @@index([createdById, updatedAt])
+}
+
+model RecipientGroupMember {
+  id        String         @id @default(cuid())
+  groupId   String
+  userId    String
+  createdAt DateTime       @default(now())
+  group     RecipientGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id])
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model ScheduledAnnouncement {
+  id          String                      @id @default(cuid())
+  target      String
+  workspaceId String?
+  userIds     String[]
+  title       String
+  message     String
+  scheduledAt DateTime
+  sentAt      DateTime?
+  status      ScheduledAnnouncementStatus @default(SCHEDULED)
+  createdById String
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  createdBy   User                        @relation("ScheduledAnnouncementCreator", fields: [createdById], references: [id])
+  workspace   Workspace?                  @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledAt])
+  @@index([createdById, createdAt])
+  @@index([workspaceId, scheduledAt])
+}
+
+model WorkspaceFeatureFlag {
+  id          String    @id @default(cuid())
+  workspaceId String
+  key         String
+  enabled     Boolean   @default(false)
+  note        String?
+  updatedBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key])
+  @@index([key, enabled])
+}
+
+model WorkspaceLimit {
+  id          String    @id @default(cuid())
+  workspaceId String
+  key         String
+  value       Int
+  note        String?
+  updatedBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key])
+  @@index([key])
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     String
+  label     String?
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@index([updatedAt])
+}
+
+model SuperAdminSupportSession {
+  id          String               @id @default(cuid())
+  workspaceId String
+  actorUserId String
+  mode        SupportSessionMode   @default(READ_ONLY)
+  status      SupportSessionStatus @default(ACTIVE)
+  reason      String
+  expiresAt   DateTime
+  endedAt     DateTime?
+  createdAt   DateTime             @default(now())
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id])
+  actor       User                 @relation("SupportSessionActor", fields: [actorUserId], references: [id])
+
+  @@index([workspaceId, status, expiresAt])
+  @@index([actorUserId, status, createdAt])
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  userId      String
+  workspaceId String?
+  type        NotificationType @default(SYSTEM)
+  title       String
+  message     String?
+  linkUrl     String?
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+  user        User             @relation(fields: [userId], references: [id])
+  workspace   Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt, createdAt])
+  @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
 }
 
 model WorkspaceInvitation {

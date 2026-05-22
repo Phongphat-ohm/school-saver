@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import * as XLSX from "xlsx";
 import { logActivity } from "@/lib/activity-log";
+import { getWorkspaceMemberLimit } from "@/lib/platform-settings";
 import { prisma } from "@/lib/prisma";
 import { OWNER_ADMIN, requireWorkspaceRole } from "@/lib/permissions";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
@@ -47,6 +48,11 @@ export async function createMemberAction(data: unknown) {
       where: { workspaceId_memberCode: { workspaceId, memberCode: parsed.data.memberCode } },
     });
     if (duplicated) return errorResult("รหัสสมาชิกนี้มีอยู่แล้วใน workspace นี้");
+    const [memberCount, memberLimit] = await Promise.all([
+      prisma.member.count({ where: { workspaceId, status: "ACTIVE" } }),
+      getWorkspaceMemberLimit(workspaceId),
+    ]);
+    if (memberCount >= memberLimit) return errorResult(`workspace นี้มีสมาชิกครบตาม limit แล้ว (${memberLimit} คน)`);
     const member = await prisma.member.create({
       data: { workspaceId, ...parsed.data, status: "ACTIVE" },
     });
@@ -138,6 +144,15 @@ export async function importMembersAction(data: unknown) {
     });
     if (existing.length > 0) {
       return errorResult(`พบรหัสสมาชิกที่มีอยู่แล้วใน workspace: ${existing.map((row) => row.memberCode).join(", ")}`);
+    }
+
+    const [memberCount, memberLimit] = await Promise.all([
+      prisma.member.count({ where: { workspaceId, status: "ACTIVE" } }),
+      getWorkspaceMemberLimit(workspaceId),
+    ]);
+    const availableSlots = Math.max(0, memberLimit - memberCount);
+    if (normalizedRows.length > availableSlots) {
+      return errorResult(`นำเข้าไม่ได้ เพราะจะเกิน limit สมาชิกของ workspace (${memberCount}/${memberLimit} คน เหลือ ${availableSlots} คน)`);
     }
 
     const created = await prisma.member.createMany({

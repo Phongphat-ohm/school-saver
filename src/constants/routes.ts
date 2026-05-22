@@ -2,6 +2,7 @@ import type { WorkspaceRole } from "@/generated/prisma/client";
 
 export const routes = {
   home: "/",
+  admin: "/admin",
   login: "/login",
   dashboard: "/dashboard",
   workspaces: "/workspaces",

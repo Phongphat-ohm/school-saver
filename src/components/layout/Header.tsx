@@ -3,20 +3,23 @@ import { Search, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { logoutAction } from "@/features/auth/actions";
 import { NotificationButton } from "@/features/notifications/components/NotificationButton";
+import { getMyNotificationsAction } from "@/features/notifications/actions";
 import { getCurrentWorkspaceAction, getMyWorkspacesAction, getPendingWorkspaceInvitationsAction } from "@/features/workspace/actions";
 import { WorkspaceSwitcher } from "@/features/workspace/components/WorkspaceSwitcher";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function Header() {
-  const [user, workspaceResult, workspacesResult, invitationsResult] = await Promise.all([
+  const [user, workspaceResult, workspacesResult, invitationsResult, notificationsResult] = await Promise.all([
     getCurrentUser(),
     getCurrentWorkspaceAction(),
     getMyWorkspacesAction(),
     getPendingWorkspaceInvitationsAction(),
+    getMyNotificationsAction(),
   ]);
   const workspace = workspaceResult.success ? workspaceResult.data : null;
   const workspaces = workspacesResult.success ? workspacesResult.data : [];
   const invitations = invitationsResult.success ? invitationsResult.data : [];
+  const notifications = notificationsResult.success ? notificationsResult.data : [];
 
   return (
     <header className="fixed inset-x-0 top-0 z-[80] px-3 py-3 backdrop-blur sm:px-4 sm:py-4 lg:left-64">
@@ -51,7 +54,7 @@ export async function Header() {
           <div className="hidden sm:block">
             <WorkspaceSwitcher currentWorkspaceId={workspace?.id} workspaces={workspaces} />
           </div>
-          <NotificationButton invitations={invitations} />
+          <NotificationButton invitations={invitations} notifications={notifications} />
           <div className="hidden items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 sm:flex">
             <div className="grid size-8 place-items-center rounded-full bg-blue-100 text-blue-700">
               <UserRound size={17} />

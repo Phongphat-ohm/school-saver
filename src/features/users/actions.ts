@@ -5,6 +5,7 @@ import { logActivity, writeActivityLog } from "@/lib/activity-log";
 import { OWNER_ADMIN, requireWorkspaceRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { issueEmailVerificationOtp, verifyEmailOtp } from "@/lib/email-verification";
+import { getOtpRateLimitSeconds, getWorkspaceLimit } from "@/lib/platform-settings";
 import { errorResult, successResult } from "@/lib/result";
 import { destroyRestoreSession, destroySession, getRestoreSession, getSession } from "@/lib/session";
 import { hashPassword, verifyPassword } from "@/lib/password";
@@ -52,6 +53,11 @@ export async function createUserAndAddToWorkspaceAction(data: unknown) {
     });
     if (exists?.username === parsed.data.username) return errorResult("username นี้มีแล้ว");
     if (exists?.email === parsed.data.email) return errorResult("อีเมลนี้มีแล้ว");
+    const [activeUsers, maxUsers] = await Promise.all([
+      prisma.workspaceMember.count({ where: { workspaceId, status: "ACTIVE" } }),
+      getWorkspaceLimit(workspaceId, "max_workspace_users", 30),
+    ]);
+    if (activeUsers + 1 > maxUsers) return errorResult(`workspace นี้มีผู้ใช้ครบตาม limit แล้ว (${activeUsers}/${maxUsers} คน)`);
     const user = await prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
@@ -215,25 +221,27 @@ export async function sendMyEmailVerificationOtpAction() {
     if (!user.email) return errorResult("กรุณาเพิ่มอีเมลก่อนขอรหัส OTP");
     if (user.emailVerifiedAt) return errorResult("อีเมลนี้ยืนยันแล้ว");
 
+    const otpRateLimitSeconds = await getOtpRateLimitSeconds();
     const activeOtp = await prisma.emailVerificationOtp.findFirst({
       where: {
         userId: user.id,
         email: user.email,
         verifiedAt: null,
         expiresAt: { gt: new Date() },
-        sentAt: { gt: new Date(Date.now() - 60 * 1000) },
+        ...(otpRateLimitSeconds > 0 ? { sentAt: { gt: new Date(Date.now() - otpRateLimitSeconds * 1000) } } : {}),
       },
       orderBy: { sentAt: "desc" },
       select: { sentAt: true },
     });
     if (activeOtp) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((activeOtp.sentAt.getTime() + 60 * 1000 - Date.now()) / 1000));
+      const retryAfterSeconds = Math.max(1, Math.ceil((activeOtp.sentAt.getTime() + otpRateLimitSeconds * 1000 - Date.now()) / 1000));
       return errorResult("กรุณารอสักครู่ก่อนขอรหัส OTP ใหม่", undefined, { retryAfterSeconds });
     }
 
     const result = await issueEmailVerificationOtp(user.id, user.email);
+    await logActivity({ workspaceId: session.currentWorkspaceId, userId: user.id, action: "SEND_EMAIL_VERIFICATION_OTP", detail: `ส่ง OTP ยืนยันอีเมล ${user.email}` });
     revalidatePath("/settings");
-    return successResult({ ...result, retryAfterSeconds: 60 }, "ส่งรหัส OTP ไปที่อีเมลแล้ว");
+    return successResult({ ...result, retryAfterSeconds: otpRateLimitSeconds }, "ส่งรหัส OTP ไปที่อีเมลแล้ว");
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "ไม่สามารถส่งรหัส OTP ได้");
   }
@@ -281,7 +289,12 @@ export async function changeMyPasswordAction(data: unknown) {
       return errorResult("ไม่พบผู้ใช้ กรุณาเข้าสู่ระบบใหม่");
     }
     const validPassword = await verifyPassword(parsed.data.currentPassword, user.passwordHash);
-    if (!validPassword) return errorResult("รหัสผ่านเดิมไม่ถูกต้อง");
+    if (!validPassword) {
+      if (session.currentWorkspaceId) {
+        await logActivity({ workspaceId: session.currentWorkspaceId, userId: session.userId, action: "CHANGE_PASSWORD_FAILED", detail: "รหัสผ่านเดิมไม่ถูกต้อง", outcome: "FAILURE" });
+      }
+      return errorResult("รหัสผ่านเดิมไม่ถูกต้อง");
+    }
     await prisma.user.update({
       where: { id: session.userId },
       data: { passwordHash: await hashPassword(parsed.data.newPassword) },
@@ -360,6 +373,12 @@ export async function cancelMyAccountAction(data: unknown) {
         where: { id: session.userId },
         data: { status: "INACTIVE", cancelledAt, restoreUntil, anonymizedAt: null },
       });
+      await writeActivityLog(tx, {
+        workspaceId: session.currentWorkspaceId,
+        userId: session.userId,
+        action: "CANCEL_ACCOUNT",
+        detail: `ยกเลิกบัญชี กู้คืนได้ถึง ${restoreUntil.toISOString()}`,
+      });
     });
 
     await destroySession();
@@ -390,8 +409,26 @@ export async function restoreCancelledAccountAction(data: unknown) {
     if (!user.restoreUntil || user.restoreUntil < new Date()) return errorResult("บัญชีนี้เกิน 30 วันแล้ว ไม่สามารถกู้คืนได้", undefined, { redirectTo: "/login" });
     if (parsed.data.username !== user.username || restoreEmail !== user.email) return errorResult("ชื่อผู้ใช้หรืออีเมลไม่ตรงกับบัญชีที่ต้องการกู้คืน");
 
+    const otpRateLimitSeconds = await getOtpRateLimitSeconds();
+    const activeOtp = await prisma.emailVerificationOtp.findFirst({
+      where: {
+        userId: user.id,
+        email: restoreEmail,
+        verifiedAt: null,
+        expiresAt: { gt: new Date() },
+        ...(otpRateLimitSeconds > 0 ? { sentAt: { gt: new Date(Date.now() - otpRateLimitSeconds * 1000) } } : {}),
+      },
+      orderBy: { sentAt: "desc" },
+      select: { sentAt: true },
+    });
+    if (activeOtp) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((activeOtp.sentAt.getTime() + otpRateLimitSeconds * 1000 - Date.now()) / 1000));
+      return errorResult("กรุณารอสักครู่ก่อนขอรหัส OTP ใหม่", undefined, { retryAfterSeconds });
+    }
+
     await issueEmailVerificationOtp(user.id, restoreEmail);
-    return successResult({ sent: true, retryAfterSeconds: 60 }, "ส่งรหัส OTP ไปที่อีเมลแล้ว");
+    await logActivity({ userId: user.id, action: "REQUEST_ACCOUNT_RESTORE", detail: `ส่ง OTP กู้คืนบัญชีไปที่ ${restoreEmail}` });
+    return successResult({ sent: true, retryAfterSeconds: otpRateLimitSeconds }, "ส่งรหัส OTP ไปที่อีเมลแล้ว");
   } catch {
     return errorResult("ไม่สามารถส่งรหัสกู้คืนบัญชีได้");
   }
@@ -427,6 +464,7 @@ export async function verifyRestoreAccountOtpAction(data: unknown) {
         where: { userId: user.id, status: "INACTIVE", cancelledAt: { not: null } },
         data: { status: "ACTIVE", cancelledAt: null },
       });
+      await writeActivityLog(tx, { userId: user.id, action: "RESTORE_ACCOUNT", detail: "กู้คืนบัญชีสำเร็จ" });
     });
     await destroyRestoreSession();
 
@@ -451,7 +489,7 @@ export async function purgeExpiredCancelledUsers() {
 
   const anonymizedAt = new Date();
   await prisma.$transaction(
-    expiredUsers.map((user) =>
+    expiredUsers.flatMap((user) => [
       prisma.user.update({
         where: { id: user.id },
         data: {
@@ -462,7 +500,14 @@ export async function purgeExpiredCancelledUsers() {
           anonymizedAt,
         },
       }),
-    ),
+      prisma.activityLog.create({
+        data: {
+          userId: user.id,
+          action: "PURGE_CANCELLED_ACCOUNT",
+          detail: "ลบบัญชีที่เกินระยะกู้คืน",
+        },
+      }),
+    ]),
   );
 
   return { count: expiredUsers.length };
