@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { BriefcaseBusiness, CalendarClock, CircleAlert, Home, Menu, WalletCards } from "lucide-react";
+import { BriefcaseBusiness, CalendarClock, CircleAlert, Home, Menu, ShieldCheck, WalletCards } from "lucide-react";
 import type { WorkspaceRole } from "@/generated/prisma/client";
 import { routes } from "@/constants/routes";
-import { getCurrentWorkspaceRole } from "@/lib/permissions";
+import { getCurrentWorkspaceRole, isSuperAdmin } from "@/lib/permissions";
 
 const items: Array<{ label: string; href: string; icon: typeof Home; allowedRoles: WorkspaceRole[] }> = [
   { label: "หน้าแรก", href: routes.dashboard, icon: Home, allowedRoles: ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"] },
@@ -14,15 +14,16 @@ const items: Array<{ label: string; href: string; icon: typeof Home; allowedRole
 ] as const;
 
 export async function BottomNav() {
-  const role = await getCurrentWorkspaceRole();
+  const [role, superAdmin] = await Promise.all([getCurrentWorkspaceRole(), isSuperAdmin()]);
   const visibleItems = role ? items.filter((item) => item.allowedRoles.includes(role)) : [{ label: "Workspace", href: routes.workspaces, icon: BriefcaseBusiness, allowedRoles: [] }];
+  const navItems = superAdmin ? [{ label: "Admin", href: routes.admin, icon: ShieldCheck, allowedRoles: [] }, ...visibleItems].slice(0, 6) : visibleItems;
 
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 grid border-t border-slate-200 bg-white/95 px-1.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 backdrop-blur lg:hidden"
-      style={{ gridTemplateColumns: `repeat(${visibleItems.length || 1}, minmax(0, 1fr))` }}
+      style={{ gridTemplateColumns: `repeat(${navItems.length || 1}, minmax(0, 1fr))` }}
     >
-      {visibleItems.map((item) => (
+      {navItems.map((item) => (
         <Link
           key={item.href}
           href={item.href}

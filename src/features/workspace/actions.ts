@@ -3,10 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { defaultPaymentMethods } from "@/constants/payment-methods";
 import { logActivity, writeActivityLog } from "@/lib/activity-log";
+import { getDefaultWorkspaceStatus, getWorkspaceLimit } from "@/lib/platform-settings";
 import { OWNER_ADMIN, OWNER_ONLY, requireWorkspaceRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { errorResult, successResult } from "@/lib/result";
-import { getSession, setCurrentWorkspace } from "@/lib/session";
+import { clearSupportSessionId, getSession, setCurrentWorkspace } from "@/lib/session";
+import { getActiveSupportSession } from "@/lib/support-access";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
 import {
   inviteUserSchema,
@@ -19,6 +21,16 @@ import {
   workspaceUserSearchSchema,
 } from "@/features/workspace/schemas";
 
+async function ensureWorkspaceUserLimit(workspaceId: string, adding = 1) {
+  const [activeUsers, maxUsers] = await Promise.all([
+    prisma.workspaceMember.count({ where: { workspaceId, status: "ACTIVE" } }),
+    getWorkspaceLimit(workspaceId, "max_workspace_users", 30),
+  ]);
+  if (activeUsers + adding > maxUsers) {
+    throw new Error(`workspace นี้มีผู้ใช้ครบตาม limit แล้ว (${activeUsers}/${maxUsers} คน)`);
+  }
+}
+
 export async function getMyWorkspacesAction() {
   try {
     const session = await getSession();
@@ -28,7 +40,12 @@ export async function getMyWorkspacesAction() {
       include: { workspace: true },
       orderBy: { createdAt: "asc" },
     });
-    return successResult(memberships.map((item) => ({ ...item.workspace, role: item.role })));
+    const workspaces = memberships.map((item) => ({ ...item.workspace, role: item.role }));
+    const supportSession = await getActiveSupportSession();
+    if (supportSession && !workspaces.some((workspace) => workspace.id === supportSession.workspaceId)) {
+      workspaces.push({ ...supportSession.workspace, role: supportSession.mode === "FULL_SUPPORT" ? "ADMIN" : "VIEWER" });
+    }
+    return successResult(workspaces);
   } catch {
     return errorResult("ไม่สามารถดึง workspace ได้");
   }
@@ -47,9 +64,10 @@ export async function getWorkspaceByIdForJoinAction(workspaceId: string) {
   try {
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { id: true, name: true, description: true },
+      select: { id: true, name: true, description: true, status: true },
     });
     if (!workspace) return errorResult("ไม่พบ workspace นี้");
+    if (workspace.status !== "ACTIVE") return errorResult("workspace นี้ถูกปิดใช้งาน");
     return successResult(workspace);
   } catch {
     return errorResult("ไม่สามารถดึงข้อมูล workspace ได้");
@@ -63,11 +81,13 @@ export async function createWorkspaceAction(data: unknown) {
     const parsed = workspaceSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูล workspace ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
 
+    const defaultStatus = await getDefaultWorkspaceStatus();
     const workspace = await prisma.$transaction(async (tx) => {
       const created = await tx.workspace.create({
         data: {
           name: parsed.data.name,
           description: parsed.data.description,
+          status: defaultStatus,
           ownerId: session.userId,
         },
       });
@@ -86,9 +106,9 @@ export async function createWorkspaceAction(data: unknown) {
       return created;
     });
 
-    await setCurrentWorkspace(workspace.id);
+    if (workspace.status === "ACTIVE") await setCurrentWorkspace(workspace.id);
     revalidatePath("/");
-    return successResult(workspace, "สร้าง workspace และสลับมาใช้งานแล้ว");
+    return successResult(workspace, workspace.status === "ACTIVE" ? "สร้าง workspace และสลับมาใช้งานแล้ว" : "สร้าง workspace แล้ว แต่ยังไม่เปิดใช้งาน");
   } catch {
     return errorResult("ไม่สามารถสร้าง workspace ได้");
   }
@@ -117,6 +137,7 @@ export async function updateCurrentWorkspaceAction(data: unknown) {
 export async function deleteCurrentWorkspaceAction() {
   try {
     const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ONLY);
+    const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } });
 
     await prisma.$transaction(async (tx) => {
       await tx.paymentTransaction.deleteMany({ where: { workspaceId } });
@@ -128,6 +149,11 @@ export async function deleteCurrentWorkspaceAction() {
       await tx.member.deleteMany({ where: { workspaceId } });
       await tx.workspaceMember.deleteMany({ where: { workspaceId } });
       await tx.workspace.delete({ where: { id: workspaceId } });
+      await writeActivityLog(tx, {
+        userId,
+        action: "DELETE_WORKSPACE",
+        detail: `ลบ workspace ${workspace?.name ?? workspaceId}`,
+      });
     });
 
     const nextWorkspace = await prisma.workspaceMember.findFirst({
@@ -152,8 +178,11 @@ export async function switchWorkspaceAction(workspaceId: string) {
     if (!session) return errorResult("กรุณาเข้าสู่ระบบ");
     const membership = await prisma.workspaceMember.findFirst({
       where: { userId: session.userId, workspaceId, status: "ACTIVE" },
+      include: { workspace: { select: { status: true } } },
     });
     if (!membership) return errorResult("คุณไม่มีสิทธิ์ใน workspace นี้");
+    if (membership.workspace.status !== "ACTIVE") return errorResult("workspace นี้ถูกปิดใช้งาน");
+    await clearSupportSessionId();
     await setCurrentWorkspace(workspaceId);
     await logActivity({ workspaceId, userId: session.userId, action: "SWITCH_WORKSPACE", detail: "สลับ workspace" });
     revalidatePath("/");
@@ -170,6 +199,11 @@ export async function inviteUserToWorkspaceAction(data: unknown) {
     if (!parsed.success) return errorResult("ข้อมูลผู้ใช้ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const user = await prisma.user.findUnique({ where: { username: parsed.data.username } });
     if (!user) return errorResult("ไม่พบ username นี้ ถ้ายังไม่มีผู้ใช้ให้ไปสร้างที่หน้า ผู้ใช้งาน ก่อน");
+    const existingMembership = await prisma.workspaceMember.findFirst({
+      where: { workspaceId, userId: user.id, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!existingMembership) await ensureWorkspaceUserLimit(workspaceId);
     const membership = await prisma.workspaceMember.upsert({
       where: { workspaceId_userId: { workspaceId, userId: user.id } },
       update: { role: parsed.data.role, status: "ACTIVE" },
@@ -251,18 +285,33 @@ export async function sendWorkspaceInvitationAction(data: unknown) {
     });
     if (existingInvite) return errorResult("ผู้ใช้นี้มีคำเชิญที่รอตอบรับอยู่แล้ว");
 
-    const invitation = await prisma.workspaceInvitation.create({
-      data: {
-        workspaceId,
-        invitedUserId: parsed.data.userId,
-        invitedById: userId,
-        role: parsed.data.role,
-        message: parsed.data.message,
-        status: "PENDING",
-      },
-      include: {
-        invitedUser: { select: { username: true, fullName: true } },
-      },
+    const invitation = await prisma.$transaction(async (tx) => {
+      const created = await tx.workspaceInvitation.create({
+        data: {
+          workspaceId,
+          invitedUserId: parsed.data.userId,
+          invitedById: userId,
+          role: parsed.data.role,
+          message: parsed.data.message,
+          status: "PENDING",
+        },
+        include: {
+          workspace: { select: { name: true } },
+          invitedBy: { select: { fullName: true } },
+          invitedUser: { select: { username: true, fullName: true } },
+        },
+      });
+      await tx.notification.create({
+        data: {
+          userId: parsed.data.userId,
+          workspaceId,
+          type: "INVITATION",
+          title: "มีคำเชิญเข้า Workspace",
+          message: `${created.invitedBy.fullName} เชิญคุณเข้า ${created.workspace.name} ในสิทธิ์ ${created.role}`,
+          linkUrl: "/workspaces",
+        },
+      });
+      return created;
     });
     await logActivity({ workspaceId, userId, action: "INVITE_WORKSPACE_USER", detail: `ส่งคำเชิญให้ ${invitedUser.fullName} เป็น ${parsed.data.role}` });
     revalidatePath("/workspaces");
@@ -281,6 +330,7 @@ export async function requestJoinWorkspaceAction(data: unknown) {
 
     const workspace = await prisma.workspace.findUnique({ where: { id: parsed.data.workspaceId } });
     if (!workspace) return errorResult("ไม่พบ workspace นี้");
+    if (workspace.status !== "ACTIVE") return errorResult("workspace นี้ถูกปิดใช้งาน");
 
     const membership = await prisma.workspaceMember.findFirst({
       where: { workspaceId: parsed.data.workspaceId, userId: session.userId, status: "ACTIVE" },
@@ -292,15 +342,38 @@ export async function requestJoinWorkspaceAction(data: unknown) {
     });
     if (existing) return errorResult("คุณส่งคำขอหรือมีคำเชิญที่รอตอบรับอยู่แล้ว");
 
-    const request = await prisma.workspaceInvitation.create({
-      data: {
-        workspaceId: parsed.data.workspaceId,
-        invitedUserId: session.userId,
-        invitedById: session.userId,
-        role: "VIEWER",
-        message: parsed.data.message || "คำขอเข้าร่วม workspace จาก QR/ลิงก์",
-        status: "PENDING",
-      },
+    const request = await prisma.$transaction(async (tx) => {
+      const created = await tx.workspaceInvitation.create({
+        data: {
+          workspaceId: parsed.data.workspaceId,
+          invitedUserId: session.userId,
+          invitedById: session.userId,
+          role: "VIEWER",
+          message: parsed.data.message || "คำขอเข้าร่วม workspace จาก QR/ลิงก์",
+          status: "PENDING",
+        },
+      });
+      const requester = await tx.user.findUnique({
+        where: { id: session.userId },
+        select: { fullName: true },
+      });
+      const admins = await tx.workspaceMember.findMany({
+        where: { workspaceId: parsed.data.workspaceId, status: "ACTIVE", role: { in: ["OWNER", "ADMIN"] }, userId: { not: session.userId } },
+        select: { userId: true },
+      });
+      if (admins.length > 0) {
+        await tx.notification.createMany({
+          data: admins.map((admin) => ({
+            userId: admin.userId,
+            workspaceId: parsed.data.workspaceId,
+            type: "JOIN_REQUEST" as const,
+            title: "มีคำขอเข้า Workspace",
+            message: `${requester?.fullName ?? "ผู้ใช้"} ขอเข้าร่วม ${workspace.name}`,
+            linkUrl: "/workspaces/manage",
+          })),
+        });
+      }
+      return created;
     });
     await logActivity({ workspaceId: parsed.data.workspaceId, userId: session.userId, action: "REQUEST_JOIN_WORKSPACE", detail: `ขอเข้า workspace ${workspace.name}` });
     revalidatePath("/workspaces");
@@ -335,6 +408,11 @@ export async function approveJoinRequestAction(data: unknown) {
       where: { id: parsed.data.invitationId, workspaceId, status: "PENDING" },
     });
     if (!invitation) return errorResult("ไม่พบคำขอที่รออนุมัติ");
+    const existingMembership = await prisma.workspaceMember.findFirst({
+      where: { workspaceId, userId: invitation.invitedUserId, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!existingMembership) await ensureWorkspaceUserLimit(workspaceId);
 
     const membership = await prisma.$transaction(async (tx) => {
       const saved = await tx.workspaceMember.upsert({
@@ -352,6 +430,20 @@ export async function approveJoinRequestAction(data: unknown) {
       await tx.workspaceInvitation.update({
         where: { id: invitation.id },
         data: { status: "ACCEPTED", role: parsed.data.role, respondedAt: new Date() },
+      });
+      const workspace = await tx.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { name: true },
+      });
+      await tx.notification.create({
+        data: {
+          userId: invitation.invitedUserId,
+          workspaceId,
+          type: "WORKSPACE",
+          title: "คำขอเข้า Workspace ได้รับอนุมัติ",
+          message: `คุณได้รับสิทธิ์ ${parsed.data.role} ใน ${workspace?.name ?? "workspace"}`,
+          linkUrl: "/workspaces",
+        },
       });
       await writeActivityLog(tx, { workspaceId, userId, action: "APPROVE_JOIN_REQUEST", detail: `อนุมัติผู้ใช้เข้า workspace เป็น ${parsed.data.role}` });
       return saved;
@@ -406,6 +498,16 @@ export async function acceptWorkspaceInvitationAction(invitationId: string) {
       where: { id: invitationId, invitedUserId: session.userId, status: "PENDING" },
     });
     if (!invitation) return errorResult("ไม่พบคำเชิญ หรือคำเชิญนี้ถูกใช้งานแล้ว");
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: invitation.workspaceId },
+      select: { status: true },
+    });
+    if (workspace?.status !== "ACTIVE") return errorResult("workspace นี้ถูกปิดใช้งาน");
+    const existingMembership = await prisma.workspaceMember.findFirst({
+      where: { workspaceId: invitation.workspaceId, userId: session.userId, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!existingMembership) await ensureWorkspaceUserLimit(invitation.workspaceId);
 
     const result = await prisma.$transaction(async (tx) => {
       const membership = await tx.workspaceMember.upsert({
@@ -429,6 +531,20 @@ export async function acceptWorkspaceInvitationAction(invitationId: string) {
         where: { id: invitation.id },
         data: { status: "ACCEPTED", respondedAt: new Date() },
       });
+      const [workspace, acceptedUser] = await Promise.all([
+        tx.workspace.findUnique({ where: { id: invitation.workspaceId }, select: { name: true } }),
+        tx.user.findUnique({ where: { id: session.userId }, select: { fullName: true } }),
+      ]);
+      await tx.notification.create({
+        data: {
+          userId: invitation.invitedById,
+          workspaceId: invitation.workspaceId,
+          type: "INVITATION",
+          title: "คำเชิญถูกตอบรับแล้ว",
+          message: `${acceptedUser?.fullName ?? "ผู้ใช้"} ตอบรับคำเชิญเข้า ${workspace?.name ?? "workspace"}`,
+          linkUrl: "/workspaces/manage",
+        },
+      });
       await writeActivityLog(tx, { workspaceId: invitation.workspaceId, userId: session.userId, action: "ACCEPT_WORKSPACE_INVITATION", detail: "ตอบรับคำเชิญเข้า workspace" });
       return membership;
     });
@@ -448,11 +564,29 @@ export async function declineWorkspaceInvitationAction(invitationId: string) {
       where: { id: invitationId, invitedUserId: session.userId, status: "PENDING" },
     });
     if (!invitation) return errorResult("ไม่พบคำเชิญ หรือคำเชิญนี้ถูกใช้งานแล้ว");
-    const updated = await prisma.workspaceInvitation.update({
-      where: { id: invitation.id },
-      data: { status: "DECLINED", respondedAt: new Date() },
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.workspaceInvitation.update({
+        where: { id: invitation.id },
+        data: { status: "DECLINED", respondedAt: new Date() },
+      });
+      const [workspace, declinedUser] = await Promise.all([
+        tx.workspace.findUnique({ where: { id: invitation.workspaceId }, select: { name: true } }),
+        tx.user.findUnique({ where: { id: session.userId }, select: { fullName: true } }),
+      ]);
+      await tx.notification.create({
+        data: {
+          userId: invitation.invitedById,
+          workspaceId: invitation.workspaceId,
+          type: "INVITATION",
+          title: "คำเชิญถูกปฏิเสธ",
+          message: `${declinedUser?.fullName ?? "ผู้ใช้"} ปฏิเสธคำเชิญเข้า ${workspace?.name ?? "workspace"}`,
+          linkUrl: "/workspaces/manage",
+        },
+      });
+      return saved;
     });
     await logActivity({ workspaceId: invitation.workspaceId, userId: session.userId, action: "DECLINE_WORKSPACE_INVITATION", detail: "ปฏิเสธคำเชิญเข้า workspace" });
+    revalidatePath("/");
     revalidatePath("/workspaces");
     return successResult(updated, "ปฏิเสธคำเชิญแล้ว");
   } catch {

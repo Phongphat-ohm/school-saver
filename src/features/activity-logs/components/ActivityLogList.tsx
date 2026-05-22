@@ -107,7 +107,6 @@ type ActivityLogListProps = {
       q: string;
       action: string;
       outcome: string;
-      userId: string;
       ipAddress: string;
     };
     pagination: {
@@ -123,7 +122,6 @@ type ActivityLogListProps = {
     options: {
       actions: string[];
       outcomes: string[];
-      users: Array<{ id: string; username: string; fullName: string; email: string | null }>;
     };
   };
 };
@@ -138,8 +136,8 @@ export function ActivityLogList({ data }: ActivityLogListProps) {
         <p className="mt-1 text-sm text-slate-500">ตรวจสอบการทำงาน, IP, เหตุการณ์ผิดพลาด และรายการที่ถูกบล็อกในระบบ</p>
       </div>
 
-      <form className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_auto]">
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+      <form className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <label className="grid min-w-0 gap-1.5 text-sm font-medium text-slate-700">
           <span>ค้นหา</span>
           <div className="flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100">
             <Search size={18} className="text-slate-400" />
@@ -147,7 +145,8 @@ export function ActivityLogList({ data }: ActivityLogListProps) {
           </div>
         </label>
 
-        <Select name="action" label="Action" defaultValue={filters.action}>
+        <div className="flex flex-wrap items-end gap-3">
+        <Select name="action" label="Action" defaultValue={filters.action} wrapperClassName="flex-[1_1_220px]">
           <option value="">ทั้งหมด</option>
           {options.actions.map((action) => (
             <option key={action} value={action}>
@@ -156,7 +155,7 @@ export function ActivityLogList({ data }: ActivityLogListProps) {
           ))}
         </Select>
 
-        <Select name="outcome" label="ผลลัพธ์" defaultValue={filters.outcome}>
+        <Select name="outcome" label="ผลลัพธ์" defaultValue={filters.outcome} wrapperClassName="flex-[1_1_180px]">
           <option value="">ทั้งหมด</option>
           {options.outcomes.map((outcome) => (
             <option key={outcome} value={outcome}>
@@ -165,21 +164,12 @@ export function ActivityLogList({ data }: ActivityLogListProps) {
           ))}
         </Select>
 
-        <Select name="userId" label="ผู้ใช้" defaultValue={filters.userId}>
-          <option value="">ทั้งหมด</option>
-          {options.users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.fullName || user.username}
-            </option>
-          ))}
-        </Select>
-
-        <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+        <label className="grid min-w-0 flex-[1_1_170px] gap-1.5 text-sm font-medium text-slate-700">
           <span>IP</span>
           <input name="ipAddress" defaultValue={filters.ipAddress} className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" />
         </label>
 
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-[90px_90px_auto] lg:items-end">
+        <div className="grid min-w-0 flex-[1_1_330px] grid-cols-2 gap-2 sm:grid-cols-[minmax(90px,120px)_minmax(90px,120px)_auto] sm:items-end">
           <label className="grid gap-1.5 text-sm font-medium text-slate-700">
             <span>ต่อหน้า</span>
             <input name="pageSize" type="number" min={1} max={100} defaultValue={filters.pageSize} className="min-h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" />
@@ -188,9 +178,10 @@ export function ActivityLogList({ data }: ActivityLogListProps) {
             <span>Max</span>
             <input name="maxCount" type="number" min={1} max={1000} defaultValue={filters.maxCount} className="min-h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" />
           </label>
-          <button className="col-span-2 min-h-11 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white transition hover:bg-blue-800 lg:col-span-1" type="submit">
+          <button className="col-span-2 min-h-11 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white transition hover:bg-blue-800 sm:col-span-1" type="submit">
             กรอง
           </button>
+        </div>
         </div>
       </form>
 
@@ -258,11 +249,16 @@ export function ActivityLogList({ data }: ActivityLogListProps) {
   );
 }
 
-function Select({ label, children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string }) {
+function Select({
+  label,
+  children,
+  wrapperClassName = "",
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; wrapperClassName?: string }) {
   return (
-    <label className="grid gap-1.5 text-sm font-medium text-slate-700">
+    <label className={`grid min-w-0 gap-1.5 text-sm font-medium text-slate-700 ${wrapperClassName}`}>
       <span>{label}</span>
-      <select className="min-h-11 rounded-lg border border-slate-200 bg-white px-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" {...props}>
+      <select className="min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" {...props}>
         {children}
       </select>
     </label>

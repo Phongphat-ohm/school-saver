@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { Bell } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { NotificationList } from "@/features/notifications/components/NotificationList";
+import type { NotificationItem } from "@/features/notifications/types";
 import { WorkspaceInvitationList } from "@/features/workspace/components/WorkspaceInvitationList";
 
-export function NotificationButton({ invitations }: { invitations: any[] }) {
+export function NotificationButton({ invitations, notifications }: { invitations: any[]; notifications: NotificationItem[] }) {
   const [open, setOpen] = useState(false);
-  const unreadCount = invitations.length;
+  const unreadCount = invitations.length + notifications.filter((notification) => !notification.readAt).length;
 
   return (
     <>
@@ -28,10 +30,16 @@ export function NotificationButton({ invitations }: { invitations: any[] }) {
       <Modal title="การแจ้งเตือน" open={open} onClose={() => setOpen(false)}>
         <div className="grid gap-4">
           <div className="rounded-2xl bg-blue-50 p-4">
-            <p className="font-bold text-slate-950">คำเชิญเข้า Workspace</p>
-            <p className="mt-1 text-sm text-slate-500">ตรวจสอบคำเชิญที่รอตอบรับจากห้องหรือกลุ่มอื่น</p>
+            <p className="font-bold text-slate-950">ศูนย์การแจ้งเตือน</p>
+            <p className="mt-1 text-sm text-slate-500">รวมคำเชิญเข้า workspace และการแจ้งเตือนจากระบบไว้ในที่เดียว</p>
           </div>
-          <WorkspaceInvitationList invitations={invitations} />
+          {invitations.length > 0 ? (
+            <div className="grid gap-3">
+              <p className="text-sm font-semibold text-slate-700">คำเชิญเข้า Workspace</p>
+              <WorkspaceInvitationList invitations={invitations} />
+            </div>
+          ) : null}
+          {notifications.length > 0 || invitations.length === 0 ? <NotificationList notifications={notifications} /> : null}
         </div>
       </Modal>
     </>

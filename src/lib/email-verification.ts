@@ -52,7 +52,7 @@ export async function issueEmailVerificationOtp(userId: string, email: string) {
 
   await sendEmailWithResend({
     to: email,
-    subject: "รหัสยืนยันอีเมล SchoolSaver",
+    subject: "รหัสยืนยันทำรายการ SchoolSaver",
     text: `รหัส OTP ของคุณคือ ${code} รหัสนี้ใช้ได้ ${OTP_EXPIRES_IN_MINUTES} นาที`,
     html: `
       <!DOCTYPE html>

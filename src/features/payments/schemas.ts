@@ -17,6 +17,10 @@ export const paymentHistoryFilterSchema = z.object({
   member: z.string().trim().optional(),
   startDate: z.string().trim().optional(),
   endDate: z.string().trim().optional(),
+  sortBy: z.enum(["paidAt", "amount", "member", "round"]).optional().default("paidAt"),
+  sortDir: z.enum(["asc", "desc"]).optional().default("desc"),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  pageSize: z.coerce.number().int().min(10).max(100).optional().default(25),
 });
 
 export const updatePaymentTransactionSchema = z.object({

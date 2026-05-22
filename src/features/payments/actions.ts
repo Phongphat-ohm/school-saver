@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { writeActivityLog } from "@/lib/activity-log";
 import { COLLECT_PAYMENT, requireWorkspaceRole } from "@/lib/permissions";
@@ -401,23 +402,45 @@ export async function getPaymentHistoryAction(filters: unknown = {}) {
     const startDate = parsed.data.startDate ? startOfDay(new Date(parsed.data.startDate)) : undefined;
     const endDate = parsed.data.endDate ? endOfDay(new Date(parsed.data.endDate)) : undefined;
     const member = parsed.data.member?.trim();
+    const requestedPage = parsed.data.page;
+    const pageSize = parsed.data.pageSize;
+    const orderBy: Prisma.PaymentTransactionOrderByWithRelationInput[] =
+      parsed.data.sortBy === "amount"
+        ? [{ amount: parsed.data.sortDir }, { paidAt: "desc" }, { createdAt: "desc" }]
+        : parsed.data.sortBy === "member"
+          ? [{ member: { fullName: parsed.data.sortDir } }, { paidAt: "desc" }, { createdAt: "desc" }]
+          : parsed.data.sortBy === "round"
+            ? [{ round: { title: parsed.data.sortDir } }, { paidAt: "desc" }, { createdAt: "desc" }]
+            : [{ paidAt: parsed.data.sortDir }, { createdAt: parsed.data.sortDir }];
+    const where: Prisma.PaymentTransactionWhereInput = {
+      workspaceId,
+      roundId: parsed.data.roundId || undefined,
+      paidAt: startDate || endDate ? { gte: startDate, lte: endDate } : undefined,
+      member: member
+        ? {
+            OR: [
+              { fullName: { contains: member, mode: "insensitive" } },
+              { memberCode: { contains: member, mode: "insensitive" } },
+              { studentNo: { contains: member, mode: "insensitive" } },
+              { phone: { contains: member, mode: "insensitive" } },
+            ],
+          }
+        : undefined,
+    };
+
+    const [transactionCount, total] = await Promise.all([
+      prisma.paymentTransaction.count({ where }),
+      prisma.paymentTransaction.aggregate({
+        where,
+        _sum: { amount: true },
+      }),
+    ]);
+    const totalPages = Math.max(1, Math.ceil(transactionCount / pageSize));
+    const page = Math.min(requestedPage, totalPages);
+    const skip = (page - 1) * pageSize;
 
     const transactions = await prisma.paymentTransaction.findMany({
-      where: {
-        workspaceId,
-        roundId: parsed.data.roundId || undefined,
-        paidAt: startDate || endDate ? { gte: startDate, lte: endDate } : undefined,
-        member: member
-          ? {
-              OR: [
-                { fullName: { contains: member, mode: "insensitive" } },
-                { memberCode: { contains: member, mode: "insensitive" } },
-                { studentNo: { contains: member, mode: "insensitive" } },
-                { phone: { contains: member, mode: "insensitive" } },
-              ],
-            }
-          : undefined,
-      },
+      where,
       select: {
         id: true,
         amount: true,
@@ -428,11 +451,29 @@ export async function getPaymentHistoryAction(filters: unknown = {}) {
         paymentMethod: { select: { id: true, name: true, type: true } },
         collectedBy: { select: { id: true, fullName: true, username: true } },
       },
-      orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
-      take: 300,
+      orderBy,
+      skip,
+      take: pageSize,
     });
 
-    return successResult(transactions);
+    return successResult({
+      rows: transactions,
+      summary: {
+        totalAmount: total._sum?.amount ?? 0,
+        pageAmount: transactions.reduce((sum, item) => sum + item.amount, 0),
+      },
+      pagination: {
+        page,
+        pageSize,
+        total: transactionCount,
+        totalPages,
+      },
+      filters: {
+        ...parsed.data,
+        page: String(page),
+        pageSize: String(pageSize),
+      },
+    });
   } catch {
     return errorResult("ไม่สามารถดึงประวัติการชำระเงินได้");
   }

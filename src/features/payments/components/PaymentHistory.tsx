@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Edit3, Filter, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Edit3, Filter, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
@@ -18,6 +18,17 @@ type PaymentHistoryFilters = {
   member?: string;
   startDate?: string;
   endDate?: string;
+  sortBy?: string;
+  sortDir?: string;
+  page?: string;
+  pageSize?: string;
+};
+
+type PaymentHistoryPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 export function PaymentHistory({
@@ -25,11 +36,15 @@ export function PaymentHistory({
   rounds,
   paymentMethods,
   filters,
+  summary,
+  pagination,
 }: {
   transactions: any[];
   rounds: Array<{ id: string; title: string }>;
   paymentMethods: Array<{ id: string; name: string }>;
   filters: PaymentHistoryFilters;
+  summary: { totalAmount: number; pageAmount: number };
+  pagination: PaymentHistoryPagination;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -38,19 +53,52 @@ export function PaymentHistory({
     member: filters.member ?? "",
     startDate: filters.startDate ?? "",
     endDate: filters.endDate ?? "",
+    sortBy: filters.sortBy ?? "paidAt",
+    sortDir: filters.sortDir ?? "desc",
+    pageSize: filters.pageSize ?? "25",
   });
   const [editing, setEditing] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ amount: 0, paymentMethodId: "", paidAt: "", note: "" });
 
   const totalAmount = useMemo(() => transactions.reduce((sum, item) => sum + item.amount, 0), [transactions]);
+  const from = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
+  const to = Math.min(pagination.total, pagination.page * pagination.pageSize);
+
+  function pushHistory(params: URLSearchParams) {
+    const search = params.toString();
+    router.push(`/payments/history${search ? `?${search}` : ""}`);
+  }
+
+  function appendCurrentFilters(params: URLSearchParams, values = form) {
+    if (values.roundId) params.set("roundId", values.roundId);
+    if (values.member.trim()) params.set("member", values.member.trim());
+    if (values.startDate) params.set("startDate", values.startDate);
+    if (values.endDate) params.set("endDate", values.endDate);
+    if (values.sortBy) params.set("sortBy", values.sortBy);
+    if (values.sortDir) params.set("sortDir", values.sortDir);
+    if (values.pageSize) params.set("pageSize", values.pageSize);
+  }
 
   function applyFilters() {
     const params = new URLSearchParams();
-    if (form.roundId) params.set("roundId", form.roundId);
-    if (form.member.trim()) params.set("member", form.member.trim());
-    if (form.startDate) params.set("startDate", form.startDate);
-    if (form.endDate) params.set("endDate", form.endDate);
-    router.push(`/payments/history${params.toString() ? `?${params.toString()}` : ""}`);
+    appendCurrentFilters(params);
+    params.set("page", "1");
+    pushHistory(params);
+  }
+
+  function updateList(nextForm: typeof form) {
+    setForm(nextForm);
+    const params = new URLSearchParams();
+    appendCurrentFilters(params, nextForm);
+    params.set("page", "1");
+    pushHistory(params);
+  }
+
+  function goToPage(page: number) {
+    const params = new URLSearchParams();
+    appendCurrentFilters(params);
+    params.set("page", String(page));
+    pushHistory(params);
   }
 
   function openEdit(transaction: any) {
@@ -95,11 +143,49 @@ export function PaymentHistory({
             กรอง
           </Button>
         </div>
+        <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-3">
+          <Select
+            label="เรียงตาม"
+            value={form.sortBy}
+            onChange={(event) => updateList({ ...form, sortBy: event.target.value })}
+            options={[
+              { label: "วันที่ชำระ", value: "paidAt" },
+              { label: "จำนวนเงิน", value: "amount" },
+              { label: "สมาชิก", value: "member" },
+              { label: "รอบเก็บเงิน", value: "round" },
+            ]}
+          />
+          <Select
+            label="ลำดับ"
+            value={form.sortDir}
+            onChange={(event) => updateList({ ...form, sortDir: event.target.value })}
+            options={[
+              { label: "มากไปน้อย / ใหม่ไปเก่า", value: "desc" },
+              { label: "น้อยไปมาก / เก่าไปใหม่", value: "asc" },
+            ]}
+          />
+          <Select
+            label="จำนวนต่อหน้า"
+            value={form.pageSize}
+            onChange={(event) => updateList({ ...form, pageSize: event.target.value })}
+            options={[
+              { label: "25 รายการ", value: "25" },
+              { label: "50 รายการ", value: "50" },
+              { label: "100 รายการ", value: "100" },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 p-4">
-        <p className="font-bold text-blue-950">พบ {transactions.length} รายการ</p>
-        <p className="text-sm font-semibold text-blue-800">ยอดรวม {formatMoney(totalAmount)}</p>
+        <p className="font-bold text-blue-950">
+          พบ {pagination.total.toLocaleString("th-TH")} รายการ
+          {pagination.total > 0 ? ` · แสดง ${from.toLocaleString("th-TH")}-${to.toLocaleString("th-TH")}` : ""}
+        </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm font-semibold text-blue-800">
+          <p>ยอดรวมทั้งหมด {formatMoney(summary.totalAmount)}</p>
+          <p>หน้านี้ {formatMoney(summary.pageAmount || totalAmount)}</p>
+        </div>
       </div>
 
       {transactions.length ? (
@@ -139,6 +225,28 @@ export function PaymentHistory({
       ) : (
         <EmptyState title="ไม่พบประวัติการชำระเงิน" />
       )}
+
+      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm font-semibold text-slate-500">
+          หน้า {pagination.page.toLocaleString("th-TH")} / {pagination.totalPages.toLocaleString("th-TH")}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="secondary" className="gap-2 px-3" disabled={pagination.page <= 1} onClick={() => goToPage(1)}>
+            หน้าแรก
+          </Button>
+          <Button type="button" variant="secondary" className="gap-2 px-3" disabled={pagination.page <= 1} onClick={() => goToPage(pagination.page - 1)}>
+            <ChevronLeft size={16} />
+            ก่อนหน้า
+          </Button>
+          <Button type="button" variant="secondary" className="gap-2 px-3" disabled={pagination.page >= pagination.totalPages} onClick={() => goToPage(pagination.page + 1)}>
+            ถัดไป
+            <ChevronRight size={16} />
+          </Button>
+          <Button type="button" variant="secondary" className="gap-2 px-3" disabled={pagination.page >= pagination.totalPages} onClick={() => goToPage(pagination.totalPages)}>
+            หน้าสุดท้าย
+          </Button>
+        </div>
+      </div>
 
       <Modal title="แก้ไขรายการชำระเงิน" open={!!editing} onClose={() => setEditing(null)}>
         <form

@@ -1,5 +1,6 @@
 "use client";
 import { logoutAction } from "@/features/auth/actions";
+import Image from "next/image";
 import { useEffect } from "react";
 
 export default function LogoutPage() {
@@ -14,7 +15,14 @@ export default function LogoutPage() {
 
                 {/* Logo (สามารถเปลี่ยนเป็นรูปภาพจริงของคุณได้) */}
                 <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-3 text-4xl shadow-sm">
-                    🐷
+                    <Image
+                        src="/images/school-saver-logo.webp"
+                        alt="SchoolSaver"
+                        width={44}
+                        height={44}
+                        className="size-11 rounded-2xl object-contain"
+                        priority
+                    />
                 </div>
 
                 {/* Brand Name */}

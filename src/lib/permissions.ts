@@ -1,8 +1,10 @@
 import type { WorkspaceRole } from "@/generated/prisma/client";
 import { cache } from "react";
 import { hasAcceptedCurrentLegal } from "@/constants/legal";
+import { isMaintenanceModeEnabled } from "@/lib/platform-settings";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { getActiveSupportSessionForWorkspace, getSupportRole } from "@/lib/support-access";
 
 const writeRoles: WorkspaceRole[] = ["OWNER", "ADMIN"];
 const collectRoles: WorkspaceRole[] = ["OWNER", "ADMIN", "COLLECTOR"];
@@ -11,9 +13,12 @@ const reportRoles: WorkspaceRole[] = ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"];
 export const getWorkspaceRole = cache(async function getWorkspaceRole(userId: string, workspaceId: string) {
   const membership = await prisma.workspaceMember.findFirst({
     where: { userId, workspaceId, status: "ACTIVE" },
-    select: { role: true },
+    select: { role: true, workspace: { select: { status: true } } },
   });
-  return membership?.role ?? null;
+  if (membership?.role && membership.workspace.status === "ACTIVE") return membership.role;
+
+  const supportSession = await getActiveSupportSessionForWorkspace(workspaceId);
+  return supportSession ? getSupportRole(supportSession.mode) : null;
 });
 
 export async function requireWorkspaceRole(allowedRoles: WorkspaceRole[]) {
@@ -21,15 +26,60 @@ export async function requireWorkspaceRole(allowedRoles: WorkspaceRole[]) {
   if (!session) throw new Error("กรุณาเข้าสู่ระบบ");
   const user = await prisma.user.findFirst({
     where: { id: session.userId, status: "ACTIVE" },
-    select: { termsAcceptedAt: true, termsVersion: true, privacyAcceptedAt: true, privacyVersion: true },
+    select: { role: true, termsAcceptedAt: true, termsVersion: true, privacyAcceptedAt: true, privacyVersion: true },
   });
   if (!user || !hasAcceptedCurrentLegal(user)) throw new Error("กรุณายอมรับเงื่อนไขและนโยบายความเป็นส่วนตัวก่อนใช้งาน");
+  if (user.role !== "SUPER_ADMIN" && await isMaintenanceModeEnabled()) throw new Error("ระบบอยู่ระหว่างปิดปรับปรุง กรุณาลองใหม่ภายหลัง");
   if (!session.currentWorkspaceId) throw new Error("ยังไม่มี workspace ที่ใช้งานอยู่");
+  const supportSession = await getActiveSupportSessionForWorkspace(session.currentWorkspaceId);
+  if (supportSession) {
+    const supportRole = getSupportRole(supportSession.mode);
+    if (!allowedRoles.includes(supportRole)) {
+      throw new Error(supportSession.mode === "READ_ONLY" ? "Support session นี้เป็นโหมดดูอย่างเดียว ไม่สามารถแก้ไขข้อมูลได้" : "คุณไม่มีสิทธิ์ทำรายการนี้");
+    }
+    return { userId: session.userId, workspaceId: session.currentWorkspaceId, role: supportRole };
+  }
+
   const role = await getWorkspaceRole(session.userId, session.currentWorkspaceId);
   if (!role || !allowedRoles.includes(role)) {
     throw new Error("คุณไม่มีสิทธิ์ทำรายการนี้");
   }
   return { userId: session.userId, workspaceId: session.currentWorkspaceId, role };
+}
+
+export async function requireSuperAdmin() {
+  const session = await getSession();
+  if (!session) throw new Error("กรุณาเข้าสู่ระบบ");
+
+  const user = await prisma.user.findFirst({
+    where: { id: session.userId, status: "ACTIVE", role: "SUPER_ADMIN" },
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      fullName: true,
+      role: true,
+      termsAcceptedAt: true,
+      termsVersion: true,
+      privacyAcceptedAt: true,
+      privacyVersion: true,
+    },
+  });
+
+  if (!user) throw new Error("คุณไม่มีสิทธิ์เข้าระบบผู้ดูแลกลาง");
+  if (!hasAcceptedCurrentLegal(user)) throw new Error("กรุณายอมรับเงื่อนไขและนโยบายความเป็นส่วนตัวก่อนใช้งาน");
+  return user;
+}
+
+export async function isSuperAdmin() {
+  const session = await getSession();
+  if (!session) return false;
+
+  const user = await prisma.user.findFirst({
+    where: { id: session.userId, status: "ACTIVE", role: "SUPER_ADMIN" },
+    select: { id: true },
+  });
+  return !!user;
 }
 
 export async function getCurrentWorkspaceRole() {

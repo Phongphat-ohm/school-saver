@@ -10,6 +10,7 @@ import {
   Tooltip,
   type ChartOptions,
 } from "chart.js";
+import Link from "next/link";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { Download, FileSpreadsheet, ReceiptText, TrendingUp, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +29,8 @@ type ChartItem = {
 };
 
 const chartColors = ["#2563eb", "#059669", "#f97316", "#7c3aed", "#dc2626", "#0891b2", "#ca8a04", "#475569"];
+const filterLabelClass = "grid min-w-0 gap-1 text-sm font-semibold text-slate-700";
+const filterFieldClass = "min-h-11 min-w-0 rounded-2xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
 function escapeCsv(value: unknown) {
   const text = String(value ?? "");
@@ -93,7 +96,7 @@ function DailyRevenueChart({ items }: { items: ChartItem[] }) {
   };
 
   return (
-    <Card className="border-0 p-5">
+    <Card className="rounded-[1.5rem] border-0 p-4 sm:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-black text-slate-950">ยอดรับรายวัน</h3>
@@ -132,7 +135,7 @@ function DoughnutRevenueChart({ items }: { items: ChartItem[] }) {
   };
 
   return (
-    <Card className="border-0 p-5">
+    <Card className="rounded-[1.5rem] border-0 p-4 sm:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-black text-slate-950">ช่องทางรับเงิน</h3>
@@ -179,7 +182,7 @@ function HorizontalRevenueChart({ title, helper, items }: { title: string; helpe
   };
 
   return (
-    <Card className="border-0 p-5">
+    <Card className="rounded-[1.5rem] border-0 p-4 sm:p-5">
       <div className="mb-4">
         <h3 className="text-lg font-black text-slate-950">{title}</h3>
         <p className="text-sm text-slate-500">{helper}</p>
@@ -214,36 +217,95 @@ export function ReportDashboard({ report }: { report: any }) {
     { รายการ: "ยอดค้างรอบเปิด", ค่า: report.outstandingAmount },
     { รายการ: "จำนวนรายการค้าง", ค่า: report.outstandingCount },
   ];
+  const pagination = report.pagination ?? { page: 1, pageSize: 25, total: report.transactions.length, totalPages: 1 };
+
+  function pageHref(page: number) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(report.filters ?? {})) {
+      if (value !== undefined && value !== null && String(value) !== "") params.set(key, String(value));
+    }
+    params.set("page", String(page));
+    return `/reports?${params.toString()}`;
+  }
 
   return (
-    <div className="grid gap-5">
-      <Card className="border-0 p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-bold text-blue-700">Reports</p>
+    <div className="grid min-w-0 gap-5">
+      <Card className="rounded-[1.5rem] border-0 p-4 sm:p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-blue-700">รายงาน</p>
             <h2 className="text-2xl font-black text-slate-950">รายงานการรับชำระเงิน</h2>
             <p className="mt-1 text-sm text-slate-500">
               {formatThaiDate(report.startDate)} ถึง {formatThaiDate(report.endDate)}
             </p>
           </div>
-          <form className="grid gap-3 sm:grid-cols-[160px_160px_auto] sm:items-end">
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
-              จากวันที่
-              <input name="from" type="date" defaultValue={formatInputDate(report.startDate)} className="min-h-11 rounded-2xl border border-slate-200 px-3 text-sm" />
-            </label>
-            <label className="grid gap-1 text-sm font-semibold text-slate-700">
-              ถึงวันที่
-              <input name="to" type="date" defaultValue={formatInputDate(report.endDate)} className="min-h-11 rounded-2xl border border-slate-200 px-3 text-sm" />
-            </label>
-            <Button type="submit" className="gap-2">
-              <ReceiptText size={18} />
-              ดูรายงาน
-            </Button>
-          </form>
+          <div className="rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">
+            ทั้งหมด {pagination.total.toLocaleString("th-TH")} รายการ
+          </div>
         </div>
+
+        <form className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+          <input name="page" type="hidden" value="1" />
+          <label className={filterLabelClass}>
+              จากวันที่
+            <input name="from" type="date" defaultValue={formatInputDate(report.startDate)} className={filterFieldClass} />
+          </label>
+          <label className={filterLabelClass}>
+              ถึงวันที่
+            <input name="to" type="date" defaultValue={formatInputDate(report.endDate)} className={filterFieldClass} />
+          </label>
+          <label className={`${filterLabelClass} sm:col-span-2 lg:col-span-2`}>
+              ค้นหา
+            <input name="q" defaultValue={report.filters?.q ?? ""} className={filterFieldClass} placeholder="ชื่อ/รหัส/หมายเหตุ" />
+          </label>
+          <label className={filterLabelClass}>
+              รอบ
+            <select name="roundId" defaultValue={report.filters?.roundId ?? ""} className={filterFieldClass}>
+                <option value="">ทุกรอบ</option>
+                {report.filterOptions.rounds.map((round: any) => <option key={round.id} value={round.id}>{round.title}</option>)}
+              </select>
+          </label>
+          <label className={filterLabelClass}>
+              วิธีชำระ
+            <select name="paymentMethodId" defaultValue={report.filters?.paymentMethodId ?? ""} className={filterFieldClass}>
+                <option value="">ทุกวิธี</option>
+                {report.filterOptions.paymentMethods.map((method: any) => <option key={method.id} value={method.id}>{method.name}</option>)}
+              </select>
+          </label>
+          <label className={filterLabelClass}>
+              ผู้รับเงิน
+            <select name="collectedById" defaultValue={report.filters?.collectedById ?? ""} className={filterFieldClass}>
+                <option value="">ทุกคน</option>
+                {report.filterOptions.collectors.map((collector: any) => <option key={collector.id} value={collector.id}>{collector.fullName || collector.username}</option>)}
+              </select>
+          </label>
+          <label className={filterLabelClass}>
+              ยอดต่ำสุด
+            <input name="minAmount" type="number" min="0" defaultValue={report.filters?.minAmount ?? ""} className={filterFieldClass} />
+          </label>
+          <label className={filterLabelClass}>
+              ยอดสูงสุด
+            <input name="maxAmount" type="number" min="0" defaultValue={report.filters?.maxAmount ?? ""} className={filterFieldClass} />
+          </label>
+          <label className={filterLabelClass}>
+              ต่อหน้า
+            <select name="pageSize" defaultValue={report.filters?.pageSize ?? "25"} className={filterFieldClass}>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+          </label>
+          <div className="flex items-end sm:col-span-2 lg:col-span-1">
+            <Button type="submit" className="w-full gap-2">
+              <ReceiptText size={18} />
+              กรอง
+            </Button>
+          </div>
+        </form>
       </Card>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
         <StatCard label="ยอดรับรวม" value={formatMoney(report.totalAmount)} />
         <StatCard label="ธุรกรรม" value={report.transactionCount} helper="รายการในช่วงวันที่เลือก" />
         <StatCard label="เฉลี่ยต่อรายการ" value={formatMoney(report.averageTransactionAmount)} />
@@ -251,30 +313,32 @@ export function ReportDashboard({ report }: { report: any }) {
         <StatCard label="รอบที่เปิดอยู่" value={report.activeRoundCount} />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+      <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <DailyRevenueChart items={report.dailySeries} />
         <DoughnutRevenueChart items={report.paymentMethodSeries} />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      <section className="grid min-w-0 gap-4 xl:grid-cols-2">
         <HorizontalRevenueChart title="ยอดรับตามรอบ" helper="รอบที่มียอดรับสูงสุด" items={report.roundSeries} />
         <HorizontalRevenueChart title="ผู้รับเงิน" helper="ยอดรับแยกตามผู้บันทึก" items={report.collectorSeries} />
       </section>
 
-      <Card className="border-0 p-5">
+      <Card className="min-w-0 rounded-[1.5rem] border-0 p-4 sm:p-5">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-black text-slate-950">รายการรับชำระ</h3>
-            <p className="text-sm text-slate-500">ข้อมูลนี้ใช้ export เพื่อตรวจบัญชีหรือส่งต่อได้</p>
+            <p className="text-sm text-slate-500">
+              แสดงหน้า {pagination.page.toLocaleString("th-TH")} จาก {pagination.totalPages.toLocaleString("th-TH")} ทั้งหมด {pagination.total.toLocaleString("th-TH")} รายการ
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="secondary" className="gap-2" onClick={() => downloadCsv("school-saver-report-summary.csv", summaryRows)}>
               <FileSpreadsheet size={18} />
               Export สรุป
             </Button>
-            <Button type="button" className="gap-2" onClick={() => downloadCsv("school-saver-transactions.csv", transactionRows)} disabled={!transactionRows.length}>
+            <Button type="button" className="gap-2" onClick={() => downloadCsv("school-saver-transactions-page.csv", transactionRows)} disabled={!transactionRows.length}>
               <Download size={18} />
-              Export รายการ
+              Export หน้านี้
             </Button>
           </div>
         </div>
@@ -293,7 +357,7 @@ export function ReportDashboard({ report }: { report: any }) {
               </tr>
             </thead>
             <tbody>
-              {report.transactions.slice(0, 25).map((item: any) => (
+              {report.transactions.map((item: any) => (
                 <tr key={item.id} className="border-t border-slate-100">
                   <td className="p-3">{formatThaiDate(item.paidAt)}</td>
                   <td className="p-3">
@@ -321,7 +385,26 @@ export function ReportDashboard({ report }: { report: any }) {
             </tbody>
           </table>
         </div>
-        {report.transactions.length > 25 ? <p className="mt-3 text-xs text-slate-500">แสดง 25 รายการล่าสุด สามารถ export เพื่อดูทั้งหมดได้</p> : null}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-slate-500">ระบบดึง transaction เฉพาะหน้าปัจจุบันเพื่อให้รายงานโหลดเร็วขึ้น</p>
+          <div className="flex items-center gap-2">
+            <Link
+              className={`rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold ${pagination.page <= 1 ? "pointer-events-none opacity-50" : "hover:bg-slate-50"}`}
+              href={pageHref(Math.max(1, pagination.page - 1))}
+            >
+              ก่อนหน้า
+            </Link>
+            <span className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">
+              {pagination.page.toLocaleString("th-TH")} / {pagination.totalPages.toLocaleString("th-TH")}
+            </span>
+            <Link
+              className={`rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold ${pagination.page >= pagination.totalPages ? "pointer-events-none opacity-50" : "hover:bg-slate-50"}`}
+              href={pageHref(Math.min(pagination.totalPages, pagination.page + 1))}
+            >
+              ถัดไป
+            </Link>
+          </div>
+        </div>
       </Card>
     </div>
   );
