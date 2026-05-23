@@ -84,7 +84,12 @@ export function WorkspaceSwitcher({
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-[10000] bg-slate-950/55 p-3 backdrop-blur-sm sm:hidden h-screen">
+        <div
+          className="fixed inset-0 z-[10000] h-screen bg-slate-950/55 p-3 backdrop-blur-sm sm:hidden"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setOpen(false);
+          }}
+        >
           <div className="flex min-h-full items-end">
             <div className="w-full rounded-t-[1.75rem] bg-white p-4 shadow-2xl">
               <div className="mb-4 flex items-center justify-between gap-3">

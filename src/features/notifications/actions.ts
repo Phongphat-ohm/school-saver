@@ -67,3 +67,19 @@ export async function markAllNotificationsReadAction() {
   }
 }
 
+export async function deleteReadNotificationsAction() {
+  try {
+    const session = await getSession();
+    if (!session) return errorResult("กรุณาเข้าสู่ระบบ");
+
+    const deleted = await prisma.notification.deleteMany({
+      where: { userId: session.userId, readAt: { not: null } },
+    });
+
+    revalidatePath("/");
+    return successResult({ count: deleted.count }, `ลบการแจ้งเตือนที่อ่านแล้ว ${deleted.count.toLocaleString("th-TH")} รายการ`);
+  } catch {
+    return errorResult("ไม่สามารถลบการแจ้งเตือนที่อ่านแล้วได้");
+  }
+}
+

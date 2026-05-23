@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Link from "next/link";
 import {
   BriefcaseBusiness,
   BookOpenText,
@@ -20,6 +19,7 @@ import {
 import { logoutAction } from "@/features/auth/actions";
 import { getNavigationItemsForRole, navigationGroups } from "@/constants/routes";
 import { getCurrentWorkspaceRole, isSuperAdmin } from "@/lib/permissions";
+import { NavLink } from "@/components/layout/NavLink";
 
 const icons = {
   LayoutDashboard,
@@ -63,13 +63,14 @@ export async function Sidebar() {
           {superAdmin ? (
             <div>
               <p className="mb-2 px-3 text-xs font-black tracking-wide text-slate-400">Platform</p>
-              <Link
+              <NavLink
                 href="/admin/dashboard"
                 className="group flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[15px] font-semibold text-emerald-100 transition hover:bg-white/10 hover:text-white"
+                activeClassName="bg-white/10 text-white"
               >
                 <ShieldCheck size={19} className="text-emerald-300 transition group-hover:text-emerald-200" />
                 <span>Super Admin</span>
-              </Link>
+              </NavLink>
             </div>
           ) : null}
           {navigationGroups.map((group) => (
@@ -81,14 +82,15 @@ export async function Sidebar() {
                   .map((item) => {
                     const Icon = icons[item.icon as keyof typeof icons] ?? LayoutDashboard;
                     return (
-                      <Link
+                      <NavLink
                         key={item.href}
                         href={item.href}
                         className="group flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[15px] font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+                        activeClassName="bg-white/10 text-white"
                       >
                         <Icon size={19} className="text-slate-500 transition group-hover:text-blue-300" />
                         <span>{item.label}</span>
-                      </Link>
+                      </NavLink>
                     );
                   })}
               </div>

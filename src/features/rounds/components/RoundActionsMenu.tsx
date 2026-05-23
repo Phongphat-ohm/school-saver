@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, Edit3, LockKeyhole, MoreHorizontal, RotateCcw, UnlockKeyhole } from "lucide-react";
 import clsx from "clsx";
@@ -10,6 +10,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { cancelRoundAction, closeRoundAction, openRoundAction, restoreCancelledRoundAction, updateCollectionRoundAction } from "@/features/rounds/actions";
 import { useActionLock } from "@/hooks/useActionLock";
+import { useClickOutside } from "@/hooks/useClickOutside";
 import { formatInputDate } from "@/lib/date";
 import { closeLoading, showConfirm, showError, showLoading, showSuccess } from "@/lib/swal";
 
@@ -25,6 +26,11 @@ export function RoundActionsMenu({ round, align = "right", fullWidth = false }: 
   const actionLock = useActionLock();
   const isSubmitting = pending || actionLock.locked;
   const [editOpen, setEditOpen] = useState(false);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const closeMenu = useCallback(() => {
+    detailsRef.current?.removeAttribute("open");
+  }, []);
+  useClickOutside(detailsRef, closeMenu);
   const [form, setForm] = useState({
     title: round.title,
     description: round.description ?? "",
@@ -62,7 +68,7 @@ export function RoundActionsMenu({ round, align = "right", fullWidth = false }: 
 
   return (
     <div className={clsx("relative inline-flex", fullWidth && "w-full")}>
-      <details className={clsx("group relative inline-flex", fullWidth && "w-full")}>
+      <details ref={detailsRef} className={clsx("group relative inline-flex", fullWidth && "w-full")}>
         <summary
           className={clsx(
             "inline-flex min-h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-2xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-200 [&::-webkit-details-marker]:hidden",

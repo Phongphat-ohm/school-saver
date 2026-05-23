@@ -8,11 +8,18 @@ import {
   SendDueScheduledAnnouncementsButton,
 } from "@/features/admin/components/AdminClientControls";
 import { formatThaiDateTime } from "@/lib/date";
+import { renderSafeMarkdown } from "@/lib/markdown";
 
 export default async function AdminAnnouncementsPage() {
   const result = await getAdminAnnouncementsAction();
   if (!result.success) return <EmptyState title="ไม่สามารถดึงข้อมูลประกาศได้" description={result.message} />;
   const unreadCount = result.data.recentNotifications.filter((item) => !item.readAt).length;
+  const recentNotificationStats = new Map<string, { count: number }>();
+
+  for (const item of result.data.recentNotifications) {
+    const key = getNotificationBatchKey(item);
+    recentNotificationStats.set(key, { count: (recentNotificationStats.get(key)?.count ?? 0) + 1 });
+  }
 
   return (
     <div className="grid gap-5">
@@ -32,12 +39,15 @@ export default async function AdminAnnouncementsPage() {
             {result.data.recentNotifications.map((item) => (
               <div className="rounded-2xl border border-slate-200 p-3" key={item.id}>
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-bold text-slate-950">{item.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">{item.message}</p>
-                    <p className="mt-2 text-xs text-slate-400">{item.workspace?.name ?? "ทั้งแพลตฟอร์ม"} · {item.user.fullName} · {formatThaiDateTime(item.createdAt)}</p>
+                    <p className="mt-2 text-xs text-slate-400">
+                      {item.workspace?.name ?? "ทั้งแพลตฟอร์ม"} · {item.user.fullName} · {formatThaiDateTime(item.createdAt)} · {item.readAt ? "อ่านแล้ว" : "ยังไม่อ่าน"}
+                    </p>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-black ${item.readAt ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{item.readAt ? "อ่านแล้ว" : "ยังไม่อ่าน"}</span>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black ${getSendTypeBadgeClass(item, recentNotificationStats.get(getNotificationBatchKey(item))?.count ?? 1)}`}>
+                    {getSendTypeLabel(item, recentNotificationStats.get(getNotificationBatchKey(item))?.count ?? 1)}
+                  </span>
                 </div>
               </div>
             ))}
@@ -68,7 +78,13 @@ export default async function AdminAnnouncementsPage() {
               {result.data.scheduledAnnouncements.map((item) => (
                 <tr className="border-t border-slate-100 align-top" key={item.id}>
                   <td className="p-3 whitespace-nowrap">{formatThaiDateTime(item.scheduledAt)}</td>
-                  <td className="max-w-[320px] p-3"><p className="font-bold text-slate-950">{item.title}</p><p className="mt-1 line-clamp-2 text-xs text-slate-500">{item.message}</p></td>
+                  <td className="max-w-[320px] p-3">
+                    <p className="font-bold text-slate-950">{item.title}</p>
+                    <div
+                      className="markdown-body mt-1 line-clamp-2 text-xs leading-5 text-slate-500"
+                      dangerouslySetInnerHTML={{ __html: renderSafeMarkdown(item.message ?? "") || "<p>-</p>" }}
+                    />
+                  </td>
                   <td className="p-3">{item.workspace?.name ?? item.target}</td>
                   <td className="p-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-700">{item.status}</span></td>
                   <td className="p-3">{item.createdBy.fullName || item.createdBy.username}</td>
@@ -83,6 +99,28 @@ export default async function AdminAnnouncementsPage() {
     </div>
   );
 }
+
+function getNotificationBatchKey(item: {
+  title: string;
+  message?: string | null;
+  createdAt: Date | string;
+  workspace?: { name: string } | null;
+}) {
+  return [item.title, item.message ?? "", new Date(item.createdAt).getTime(), item.workspace?.name ?? ""].join("|");
+}
+
+function getSendTypeLabel(item: { workspace?: { name: string } | null }, batchCount: number) {
+  if (item.workspace?.name) return "Workspace";
+  if (batchCount > 1) return "หลายผู้ใช้";
+  return "เฉพาะผู้ใช้";
+}
+
+function getSendTypeBadgeClass(item: { workspace?: { name: string } | null }, batchCount: number) {
+  if (item.workspace?.name) return "bg-blue-50 text-blue-700";
+  if (batchCount > 1) return "bg-violet-50 text-violet-700";
+  return "bg-slate-100 text-slate-700";
+}
+
 function Header({ title, description }: { title: string; description: string }) {
   return <div><h1 className="text-2xl font-black text-slate-950">{title}</h1><p className="mt-1 text-sm text-slate-500">{description}</p></div>;
 }

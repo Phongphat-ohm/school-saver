@@ -31,17 +31,63 @@ body {
   font-family: var(--font-kanit), system-ui, sans-serif;
 }
 
-.markdown-body :where(p, ul, ol, h1, h2, h3) {
+.markdown-body :where(p, ul, ol, h1, h2, h3, h4, h5, h6, blockquote, pre) {
   margin-bottom: 0.75rem;
 }
 
-.markdown-body :where(p, ul, ol, h1, h2, h3):last-child {
+.markdown-body :where(p, ul, ol, h1, h2, h3, h4, h5, h6, blockquote, pre, hr):last-child {
   margin-bottom: 0;
+}
+
+.markdown-body h1 {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.markdown-body h2 {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.markdown-body h3 {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.markdown-body :where(h4, h5, h6) {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.markdown-body :where(ul, ol) {
+  display: grid;
+  gap: 0.35rem;
+  padding-left: 1.25rem;
 }
 
 .markdown-body ul {
   list-style: disc;
-  padding-left: 1.25rem;
+}
+
+.markdown-body ol {
+  list-style: decimal;
+}
+
+.markdown-body :where(strong, b) {
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.markdown-body :where(em, i) {
+  color: #334155;
 }
 
 .markdown-body a {
@@ -55,6 +101,36 @@ body {
   background: #e2e8f0;
   padding: 0.1rem 0.35rem;
   font-family: var(--font-geist-mono), monospace;
+}
+
+.markdown-body pre {
+  margin-bottom: 0.75rem;
+  overflow-x: auto;
+  border-radius: 0.875rem;
+  background: #0f172a;
+  padding: 1rem;
+  color: #e2e8f0;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.markdown-body blockquote {
+  margin-bottom: 0.75rem;
+  border-left: 4px solid #60a5fa;
+  border-radius: 0.75rem;
+  background: #eff6ff;
+  padding: 0.75rem 1rem;
+  color: #334155;
+}
+
+.markdown-body hr {
+  margin: 1rem 0;
+  border: 0;
+  border-top: 1px solid #cbd5e1;
 }
 
 .sidebar-scrollbar {

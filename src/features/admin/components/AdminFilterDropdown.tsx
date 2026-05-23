@@ -1,6 +1,10 @@
+"use client";
+
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 type AdminFilterDropdownProps = {
   title?: string;
@@ -17,8 +21,22 @@ export function AdminFilterDropdown({
   resetHref,
   children,
 }: AdminFilterDropdownProps) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const [open, setOpen] = useState(activeCount > 0);
+  const closeDropdown = useCallback(() => setOpen(false), []);
+  useClickOutside(detailsRef, closeDropdown, open);
+
+  useEffect(() => {
+    if (activeCount > 0) setOpen(true);
+  }, [activeCount]);
+
   return (
-    <details className="group max-w-full overflow-hidden rounded-2xl border border-white/80 bg-white/90 shadow-sm" open={activeCount > 0}>
+    <details
+      ref={detailsRef}
+      className="group max-w-full overflow-hidden rounded-2xl border border-white/80 bg-white/90 shadow-sm"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-4">
         <div className="flex min-w-0 items-center gap-3">
           <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-blue-50 text-blue-600">
