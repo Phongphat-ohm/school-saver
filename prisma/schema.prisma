@@ -40,6 +40,7 @@ enum WorkspaceStatus {
 enum MemberStatus {
   ACTIVE
   INACTIVE
+  HIDDEN
 }
 
 enum FineType {
@@ -422,7 +423,7 @@ model Member {
   memberRounds        MemberRound[]
   paymentTransactions PaymentTransaction[]
 
-  @@unique([workspaceId, memberCode])
+  @@index([workspaceId, memberCode])
   @@index([workspaceId, status])
   @@index([workspaceId, studentNo])
 }

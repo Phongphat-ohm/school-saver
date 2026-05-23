@@ -37,6 +37,11 @@ export function PaymentCard({
                 {row.member.studentNo ? `เลขที่ ${row.member.studentNo} • ` : ""}
                 {row.member.memberCode ? `รหัส ${row.member.memberCode}` : row.round.title}
               </p>
+              {row.member.status && row.member.status !== "ACTIVE" ? (
+                <div className="mt-2">
+                  <StatusBadge status={row.member.status} />
+                </div>
+              ) : null}
             </div>
             <div className="shrink-0">
               <StatusBadge status={current.currentStatus} />

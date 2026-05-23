@@ -17,6 +17,7 @@ export const routes = {
   reports: "/reports",
   activityLogs: "/activity-logs",
   help: "/help",
+  contact: "/contact",
   settings: "/settings",
 } as const;
 
@@ -36,6 +37,7 @@ export const navigationItems = [
   { label: "รายงาน", href: routes.reports, icon: "ChartNoAxesCombined", group: "รายงานและระบบ", allowedRoles: ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"] },
   { label: "วิธีใช้งาน", href: routes.help, icon: "BookOpenText", group: "รายงานและระบบ", allowedRoles: ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"] },
   { label: "ตั้งค่า", href: routes.settings, icon: "Settings", group: "รายงานและระบบ", allowedRoles: ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"] },
+  { label: "Contact", href: routes.contact, icon: "LifeBuoy", group: navigationGroups[3], allowedRoles: ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"] },
   { label: "Activity Log", href: routes.activityLogs, icon: "History", group: navigationGroups[3], allowedRoles: ["OWNER", "ADMIN"] },
 ] satisfies Array<{
   label: string;

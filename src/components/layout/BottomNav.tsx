@@ -16,7 +16,7 @@ const items: Array<{ label: string; href: string; icon: typeof Home; allowedRole
 export async function BottomNav() {
   const [role, superAdmin] = await Promise.all([getCurrentWorkspaceRole(), isSuperAdmin()]);
   const visibleItems = role ? items.filter((item) => item.allowedRoles.includes(role)) : [{ label: "Workspace", href: routes.workspaces, icon: BriefcaseBusiness, allowedRoles: [] }];
-  const navItems = superAdmin ? [{ label: "Admin", href: routes.admin, icon: ShieldCheck, allowedRoles: [] }, ...visibleItems].slice(0, 6) : visibleItems;
+  const navItems = superAdmin ? [{ label: "Admin", href: "/admin/dashboard", icon: ShieldCheck, allowedRoles: [] }, ...visibleItems].slice(0, 6) : visibleItems;
 
   return (
     <nav

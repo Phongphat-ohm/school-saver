@@ -8,12 +8,14 @@ import { ChangePasswordForm } from "@/features/settings/components/ChangePasswor
 import { EmailVerificationForm } from "@/features/settings/components/EmailVerificationForm";
 import { AccountCancellationForm } from "@/features/settings/components/AccountCancellationForm";
 import { MyProfileForm } from "@/features/settings/components/MyProfileForm";
+import { getCurrentWorkspacePlanLimitsAction } from "@/features/settings/actions";
+import { WorkspacePlanLimitCard } from "@/features/settings/components/WorkspacePlanLimitCard";
 import { WorkspaceSettingsForm } from "@/features/settings/components/WorkspaceSettingsForm";
 import { getCurrentWorkspaceAction } from "@/features/workspace/actions";
 import { requireUser } from "@/lib/auth";
 
 export default async function SettingsPage() {
-  const [user, workspace] = await Promise.all([requireUser(), getCurrentWorkspaceAction()]);
+  const [user, workspace, planLimits] = await Promise.all([requireUser(), getCurrentWorkspaceAction(), getCurrentWorkspacePlanLimitsAction()]);
 
   return (
     <AppLayout>
@@ -68,6 +70,11 @@ export default async function SettingsPage() {
             ) : (
               <p>{workspace.message}</p>
             )}
+          </Card>
+
+          <Card className="xl:col-span-2">
+            <h3 className="mb-4 text-lg font-bold text-slate-950">Plan และ Limit ของ Workspace</h3>
+            {planLimits.success ? <WorkspacePlanLimitCard data={planLimits.data} /> : <p className="text-sm text-slate-500">{planLimits.message}</p>}
           </Card>
         </div>
 

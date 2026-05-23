@@ -272,7 +272,7 @@ export async function getSuperAdminOverviewAction() {
           },
         },
         orderBy: { createdAt: "desc" },
-        take: 8,
+        take: 5,
       }),
       prisma.user.findMany({
         select: {
@@ -287,7 +287,7 @@ export async function getSuperAdminOverviewAction() {
           _count: { select: { workspaceMemberships: true } },
         },
         orderBy: { createdAt: "desc" },
-        take: 8,
+        take: 5,
       }),
       prisma.workspace.findMany({
         select: {
@@ -309,7 +309,7 @@ export async function getSuperAdminOverviewAction() {
           },
         },
         orderBy: { updatedAt: "desc" },
-        take: 20,
+        take: 8,
       }),
       prisma.user.findMany({
         select: {
@@ -325,7 +325,7 @@ export async function getSuperAdminOverviewAction() {
           _count: { select: { workspaceMemberships: true, activityLogs: true } },
         },
         orderBy: { updatedAt: "desc" },
-        take: 20,
+        take: 8,
       }),
       prisma.paymentTransaction.findMany({
         select: {
@@ -339,7 +339,7 @@ export async function getSuperAdminOverviewAction() {
           collectedBy: { select: { id: true, fullName: true, username: true } },
         },
         orderBy: { paidAt: "desc" },
-        take: 10,
+        take: 5,
       }),
       prisma.activityLog.findMany({
         select: {
@@ -354,7 +354,7 @@ export async function getSuperAdminOverviewAction() {
           user: { select: { id: true, fullName: true, username: true } },
         },
         orderBy: { createdAt: "desc" },
-        take: 12,
+        take: 6,
       }),
       prisma.paymentTransaction.groupBy({
         by: ["workspaceId"],

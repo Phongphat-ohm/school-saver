@@ -9,6 +9,7 @@ import {
   CreditCard,
   History,
   LayoutDashboard,
+  LifeBuoy,
   LogOut,
   Settings,
   ShieldCheck,
@@ -32,6 +33,7 @@ const icons = {
   ChartNoAxesCombined,
   History,
   BookOpenText,
+  LifeBuoy,
   Settings,
   ShieldCheck,
 };
@@ -62,7 +64,7 @@ export async function Sidebar() {
             <div>
               <p className="mb-2 px-3 text-xs font-black tracking-wide text-slate-400">Platform</p>
               <Link
-                href="/admin"
+                href="/admin/dashboard"
                 className="group flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[15px] font-semibold text-emerald-100 transition hover:bg-white/10 hover:text-white"
               >
                 <ShieldCheck size={19} className="text-emerald-300 transition group-hover:text-emerald-200" />

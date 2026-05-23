@@ -87,7 +87,6 @@ type ActivityLogItem = {
     id: string;
     username: string;
     fullName: string;
-    email: string | null;
   } | null;
 };
 
@@ -209,7 +208,6 @@ export function ActivityLogList({ data }: ActivityLogListProps) {
                     {log.detail ? <p className="mt-1 text-sm text-slate-600">{log.detail}</p> : null}
                     <p className="mt-1 text-xs text-slate-400">
                       โดย {log.user ? log.user.fullName || log.user.username : "Guest/System"}
-                      {log.user?.email ? ` • ${log.user.email}` : ""}
                     </p>
                     <p className="mt-1 break-words text-xs text-slate-400">
                       IP: {log.ipAddress ?? "-"} {log.method ? `• ${log.method}` : ""} {log.path ? `• ${log.path}` : ""}

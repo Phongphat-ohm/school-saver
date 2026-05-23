@@ -22,11 +22,10 @@ export type ActivityLogQueryInput = {
 
 export async function getActivityLogsAction(input: ActivityLogQueryInput = {}) {
   try {
-    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
     const filters = normalizeActivityLogFilters(input);
     const baseWhere: Prisma.ActivityLogWhereInput = {
-      userId,
-      OR: [{ workspaceId }, { workspaceId: null }],
+      workspaceId,
     };
     const where: Prisma.ActivityLogWhereInput = {
       AND: [
@@ -43,7 +42,6 @@ export async function getActivityLogsAction(input: ActivityLogQueryInput = {}) {
                 { userAgent: { contains: filters.q, mode: "insensitive" } },
                 { user: { is: { username: { contains: filters.q, mode: "insensitive" } } } },
                 { user: { is: { fullName: { contains: filters.q, mode: "insensitive" } } } },
-                { user: { is: { email: { contains: filters.q, mode: "insensitive" } } } },
               ],
             }
           : {},
@@ -62,7 +60,7 @@ export async function getActivityLogsAction(input: ActivityLogQueryInput = {}) {
         ? prisma.activityLog.findMany({
             where,
             include: {
-              user: { select: { id: true, username: true, fullName: true, email: true } },
+              user: { select: { id: true, username: true, fullName: true } },
             },
             orderBy: { createdAt: "desc" },
             skip,

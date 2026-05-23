@@ -11,6 +11,8 @@ export const collectionRoundSchema = z
     fineType: z.enum(["NONE", "DAILY", "WEEKLY", "FIXED"]).default("NONE"),
     fineAmount: z.coerce.number().int().min(0).default(0),
     fineMaxAmount: z.coerce.number().int().min(0).optional().nullable(),
+    includedMemberIds: z.array(z.string().min(1)).optional(),
+    waivedMemberIds: z.array(z.string().min(1)).optional(),
   })
   .refine((data) => data.dueDate >= data.startDate, {
     message: "วันที่ครบกำหนดต้องมากกว่าหรือเท่ากับวันที่เริ่มเก็บ",

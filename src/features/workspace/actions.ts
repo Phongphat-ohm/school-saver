@@ -3,13 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { defaultPaymentMethods } from "@/constants/payment-methods";
 import { logActivity, writeActivityLog } from "@/lib/activity-log";
-import { getDefaultWorkspaceStatus, getWorkspaceLimit } from "@/lib/platform-settings";
+import { getDefaultWorkspaceStatus } from "@/lib/platform-settings";
 import { OWNER_ADMIN, OWNER_ONLY, requireWorkspaceRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { errorResult, successResult } from "@/lib/result";
 import { clearSupportSessionId, getSession, setCurrentWorkspace } from "@/lib/session";
 import { getActiveSupportSession } from "@/lib/support-access";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
+import { ensureWorkspaceUserLimit } from "@/lib/workspace-limits";
 import {
   inviteUserSchema,
   approveJoinRequestSchema,
@@ -20,16 +21,6 @@ import {
   workspaceSchema,
   workspaceUserSearchSchema,
 } from "@/features/workspace/schemas";
-
-async function ensureWorkspaceUserLimit(workspaceId: string, adding = 1) {
-  const [activeUsers, maxUsers] = await Promise.all([
-    prisma.workspaceMember.count({ where: { workspaceId, status: "ACTIVE" } }),
-    getWorkspaceLimit(workspaceId, "max_workspace_users", 30),
-  ]);
-  if (activeUsers + adding > maxUsers) {
-    throw new Error(`workspace นี้มีผู้ใช้ครบตาม limit แล้ว (${activeUsers}/${maxUsers} คน)`);
-  }
-}
 
 export async function getMyWorkspacesAction() {
   try {
@@ -204,10 +195,13 @@ export async function inviteUserToWorkspaceAction(data: unknown) {
       select: { id: true },
     });
     if (!existingMembership) await ensureWorkspaceUserLimit(workspaceId);
-    const membership = await prisma.workspaceMember.upsert({
-      where: { workspaceId_userId: { workspaceId, userId: user.id } },
-      update: { role: parsed.data.role, status: "ACTIVE" },
-      create: { workspaceId, userId: user.id, role: parsed.data.role, status: "ACTIVE" },
+    const membership = await prisma.$transaction(async (tx) => {
+      if (!existingMembership) await ensureWorkspaceUserLimit(workspaceId, 1, tx);
+      return tx.workspaceMember.upsert({
+        where: { workspaceId_userId: { workspaceId, userId: user.id } },
+        update: { role: parsed.data.role, status: "ACTIVE" },
+        create: { workspaceId, userId: user.id, role: parsed.data.role, status: "ACTIVE" },
+      });
     });
     await logActivity({ workspaceId, userId, action: "INVITE_WORKSPACE_USER", detail: `เพิ่ม ${user.fullName} เข้า workspace เป็น ${parsed.data.role}` });
     revalidatePath("/workspaces");
@@ -285,7 +279,10 @@ export async function sendWorkspaceInvitationAction(data: unknown) {
     });
     if (existingInvite) return errorResult("ผู้ใช้นี้มีคำเชิญที่รอตอบรับอยู่แล้ว");
 
+    await ensureWorkspaceUserLimit(workspaceId);
+
     const invitation = await prisma.$transaction(async (tx) => {
+      await ensureWorkspaceUserLimit(workspaceId, 1, tx);
       const created = await tx.workspaceInvitation.create({
         data: {
           workspaceId,
@@ -342,7 +339,10 @@ export async function requestJoinWorkspaceAction(data: unknown) {
     });
     if (existing) return errorResult("คุณส่งคำขอหรือมีคำเชิญที่รอตอบรับอยู่แล้ว");
 
+    await ensureWorkspaceUserLimit(parsed.data.workspaceId);
+
     const request = await prisma.$transaction(async (tx) => {
+      await ensureWorkspaceUserLimit(parsed.data.workspaceId, 1, tx);
       const created = await tx.workspaceInvitation.create({
         data: {
           workspaceId: parsed.data.workspaceId,
@@ -412,9 +412,10 @@ export async function approveJoinRequestAction(data: unknown) {
       where: { workspaceId, userId: invitation.invitedUserId, status: "ACTIVE" },
       select: { id: true },
     });
-    if (!existingMembership) await ensureWorkspaceUserLimit(workspaceId);
+    if (!existingMembership) await ensureWorkspaceUserLimit(workspaceId, 0);
 
     const membership = await prisma.$transaction(async (tx) => {
+      if (!existingMembership) await ensureWorkspaceUserLimit(workspaceId, 0, tx);
       const saved = await tx.workspaceMember.upsert({
         where: { workspaceId_userId: { workspaceId, userId: invitation.invitedUserId } },
         update: { role: parsed.data.role, status: "ACTIVE" },
@@ -507,9 +508,10 @@ export async function acceptWorkspaceInvitationAction(invitationId: string) {
       where: { workspaceId: invitation.workspaceId, userId: session.userId, status: "ACTIVE" },
       select: { id: true },
     });
-    if (!existingMembership) await ensureWorkspaceUserLimit(invitation.workspaceId);
+    if (!existingMembership) await ensureWorkspaceUserLimit(invitation.workspaceId, 0);
 
     const result = await prisma.$transaction(async (tx) => {
+      if (!existingMembership) await ensureWorkspaceUserLimit(invitation.workspaceId, 0, tx);
       const membership = await tx.workspaceMember.upsert({
         where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: session.userId } },
         update: { role: invitation.role, status: "ACTIVE" },

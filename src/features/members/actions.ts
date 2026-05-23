@@ -30,7 +30,7 @@ export async function getMembersAction() {
   try {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
     const members = await prisma.member.findMany({
-      where: { workspaceId },
+      where: { workspaceId, status: { not: "HIDDEN" } },
       orderBy: [{ studentNo: "asc" }, { fullName: "asc" }],
     });
     return successResult(members);
@@ -44,8 +44,8 @@ export async function createMemberAction(data: unknown) {
     const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
     const parsed = memberSchema.safeParse(data);
     if (!parsed.success) return errorResult("ข้อมูลสมาชิกไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
-    const duplicated = await prisma.member.findUnique({
-      where: { workspaceId_memberCode: { workspaceId, memberCode: parsed.data.memberCode } },
+    const duplicated = await prisma.member.findFirst({
+      where: { workspaceId, memberCode: parsed.data.memberCode, status: { not: "HIDDEN" } },
     });
     if (duplicated) return errorResult("รหัสสมาชิกนี้มีอยู่แล้วใน workspace นี้");
     const [memberCount, memberLimit] = await Promise.all([
@@ -72,7 +72,7 @@ export async function updateMemberAction(id: string, data: unknown) {
     const member = await prisma.member.findFirst({ where: { id, workspaceId } });
     if (!member) return errorResult("ไม่พบสมาชิกใน workspace นี้");
     const duplicated = await prisma.member.findFirst({
-      where: { workspaceId, memberCode: parsed.data.memberCode, NOT: { id } },
+      where: { workspaceId, memberCode: parsed.data.memberCode, status: { not: "HIDDEN" }, NOT: { id } },
     });
     if (duplicated) return errorResult("รหัสสมาชิกนี้มีอยู่แล้วใน workspace นี้");
     const updated = await prisma.member.update({ where: { id }, data: parsed.data });
@@ -117,6 +117,92 @@ export async function disableMembersAction(ids: string[]) {
   }
 }
 
+export async function enableMemberAction(id: string) {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const member = await prisma.member.findFirst({ where: { id, workspaceId, status: "INACTIVE" } });
+    if (!member) return errorResult("ไม่พบสมาชิกที่ปิดใช้งานใน workspace นี้");
+
+    const [activeCount, memberLimit] = await Promise.all([
+      prisma.member.count({ where: { workspaceId, status: "ACTIVE" } }),
+      getWorkspaceMemberLimit(workspaceId),
+    ]);
+    if (activeCount >= memberLimit) return errorResult(`เปิดใช้งานไม่ได้ เพราะสมาชิก ACTIVE ครบ limit แล้ว (${activeCount}/${memberLimit} คน)`);
+
+    const updated = await prisma.member.update({ where: { id }, data: { status: "ACTIVE" } });
+    await logActivity({ workspaceId, userId, action: "ENABLE_MEMBER", detail: `เปิดใช้งานสมาชิก ${member.fullName} (${member.memberCode})` });
+    revalidatePath("/members");
+    revalidatePath("/rounds");
+    return successResult(updated, "เปิดใช้งานสมาชิกแล้ว");
+  } catch {
+    return errorResult("ไม่สามารถเปิดใช้งานสมาชิกได้");
+  }
+}
+
+export async function enableMembersAction(ids: string[]) {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (uniqueIds.length === 0) return errorResult("กรุณาเลือกสมาชิกที่ต้องการเปิดใช้งาน");
+
+    const [membersToEnable, activeCount, memberLimit] = await Promise.all([
+      prisma.member.findMany({ where: { workspaceId, id: { in: uniqueIds }, status: "INACTIVE" }, select: { id: true } }),
+      prisma.member.count({ where: { workspaceId, status: "ACTIVE" } }),
+      getWorkspaceMemberLimit(workspaceId),
+    ]);
+    if (membersToEnable.length === 0) return errorResult("ไม่พบสมาชิกที่ปิดใช้งานในรายการที่เลือก");
+    const availableSlots = Math.max(0, memberLimit - activeCount);
+    if (membersToEnable.length > availableSlots) {
+      return errorResult(`เปิดใช้งานไม่ได้ เพราะจะเกิน limit สมาชิก (${activeCount}/${memberLimit} คน เหลือ ${availableSlots} คน)`);
+    }
+
+    const result = await prisma.member.updateMany({
+      where: { workspaceId, id: { in: membersToEnable.map((member) => member.id) }, status: "INACTIVE" },
+      data: { status: "ACTIVE" },
+    });
+    await logActivity({ workspaceId, userId, action: "ENABLE_MEMBER", detail: `เปิดใช้งานสมาชิก ${result.count} รายการ` });
+
+    revalidatePath("/members");
+    revalidatePath("/rounds");
+    return successResult({ count: result.count }, `เปิดใช้งานสมาชิกสำเร็จ ${result.count} รายการ`);
+  } catch {
+    return errorResult("ไม่สามารถเปิดใช้งานสมาชิกที่เลือกได้");
+  }
+}
+
+export async function hideMemberAction(id: string) {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const member = await prisma.member.findFirst({ where: { id, workspaceId, status: { not: "HIDDEN" } } });
+    if (!member) return errorResult("ไม่พบสมาชิกใน workspace นี้");
+    const updated = await prisma.member.update({ where: { id }, data: { status: "HIDDEN" } });
+    await logActivity({ workspaceId, userId, action: "HIDE_MEMBER", detail: `ซ่อนสมาชิก ${member.fullName} (${member.memberCode})` });
+    revalidatePath("/members");
+    return successResult(updated, "ลบแบบไม่เห็นแล้ว");
+  } catch {
+    return errorResult("ไม่สามารถลบแบบไม่เห็นได้");
+  }
+}
+
+export async function hideMembersAction(ids: string[]) {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (uniqueIds.length === 0) return errorResult("กรุณาเลือกสมาชิกที่ต้องการลบแบบไม่เห็น");
+
+    const result = await prisma.member.updateMany({
+      where: { workspaceId, id: { in: uniqueIds }, status: { not: "HIDDEN" } },
+      data: { status: "HIDDEN" },
+    });
+    await logActivity({ workspaceId, userId, action: "HIDE_MEMBER", detail: `ซ่อนสมาชิก ${result.count} รายการ` });
+
+    revalidatePath("/members");
+    return successResult({ count: result.count }, `ลบแบบไม่เห็นสำเร็จ ${result.count} รายการ`);
+  } catch {
+    return errorResult("ไม่สามารถลบแบบไม่เห็นสมาชิกที่เลือกได้");
+  }
+}
+
 export async function importMembersAction(data: unknown) {
   try {
     const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
@@ -139,7 +225,7 @@ export async function importMembersAction(data: unknown) {
     }
 
     const existing = await prisma.member.findMany({
-      where: { workspaceId, memberCode: { in: normalizedRows.map((row) => row.memberCode) } },
+      where: { workspaceId, memberCode: { in: normalizedRows.map((row) => row.memberCode) }, status: { not: "HIDDEN" } },
       select: { memberCode: true },
     });
     if (existing.length > 0) {

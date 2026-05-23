@@ -1,0 +1,1 @@
+ALTER TYPE "MemberStatus" ADD VALUE 'HIDDEN';

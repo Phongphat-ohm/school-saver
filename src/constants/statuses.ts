@@ -20,6 +20,7 @@ export const roundStatusLabels: Record<RoundStatus, string> = {
 export const statusTone: Record<string, "default" | "success" | "warning" | "danger" | "info"> = {
   ACTIVE: "success",
   INACTIVE: "default",
+  HIDDEN: "danger",
   UNPAID: "default",
   PARTIAL: "warning",
   PAID: "success",

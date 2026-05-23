@@ -50,6 +50,7 @@ export function RoundMemberList({
   const [status, setStatus] = useState("ALL");
   const [payState, setPayState] = useState("ALL");
   const [scannedPaymentRow, setScannedPaymentRow] = useState<any | null>(null);
+  const payableMemberRounds = useMemo(() => memberRounds.filter((row) => row.member?.status === "ACTIVE"), [memberRounds]);
 
   useEffect(() => {
     setKeyword(initialKeyword);
@@ -58,8 +59,9 @@ export function RoundMemberList({
   function applyScannedMember(payload: MemberPaymentQrPayload) {
     const memberCode = payload.memberCode;
     const normalizedMemberCode = memberCode.trim().toLowerCase();
-    const matchedRows = memberRounds.filter((row) => row.member?.memberCode?.trim().toLowerCase() === normalizedMemberCode);
-    const payableRow = matchedRows.find((row) => {
+    const matchedRows = payableMemberRounds.filter((row) => row.member?.memberCode?.trim().toLowerCase() === normalizedMemberCode);
+    const activeRows = matchedRows.filter((row) => row.member?.status === "ACTIVE");
+    const payableRow = activeRows.find((row) => {
       const rowRound = round ?? row.round;
       const outstandingAmount = row.current?.outstandingAmount ?? row.remainingAmount ?? 0;
       return (
@@ -72,7 +74,7 @@ export function RoundMemberList({
     setKeyword(memberCode);
     setPayState("OUTSTANDING");
 
-    if (!matchedRows.length) {
+    if (!activeRows.length) {
       showError("ไม่พบสมาชิกจาก QR นี้ในรายการค้างชำระของ Workspace ปัจจุบัน");
       return;
     }
@@ -89,7 +91,7 @@ export function RoundMemberList({
   const rows = useMemo(() => {
     const search = keyword.trim().toLowerCase();
 
-    return memberRounds.filter((row) => {
+    return payableMemberRounds.filter((row) => {
       const currentStatus = row.current?.currentStatus ?? row.status;
       const outstandingAmount = row.current?.outstandingAmount ?? row.remainingAmount ?? 0;
       const member = row.member ?? {};
@@ -107,7 +109,7 @@ export function RoundMemberList({
 
       return matchesSearch && matchesStatus && matchesPayState;
     });
-  }, [keyword, memberRounds, payState, status]);
+  }, [keyword, payableMemberRounds, payState, status]);
 
   return (
     <section className="grid gap-3">
@@ -143,7 +145,7 @@ export function RoundMemberList({
         </div>
         <div className="mt-3 flex items-center gap-2 text-xs font-medium text-slate-500">
           <SlidersHorizontal size={15} />
-          แสดง {rows.length} จาก {memberRounds.length} คน
+          แสดง {rows.length} จาก {payableMemberRounds.length} คน
         </div>
       </div>
 
@@ -156,7 +158,7 @@ export function RoundMemberList({
                 key={row.id}
                 row={{ ...row, round: rowRound }}
                 paymentMethods={paymentMethods}
-                canPay={(rowRound?.status === "OPEN" || (round && rowRound?.status === "CLOSED")) && paymentMethods.length > 0}
+                canPay={(rowRound?.status === "OPEN" || (round && rowRound?.status === "CLOSED")) && paymentMethods.length > 0 && row.member?.status === "ACTIVE"}
                 compact
               />
             );

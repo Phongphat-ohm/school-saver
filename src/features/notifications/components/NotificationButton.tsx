@@ -5,11 +5,14 @@ import { Bell } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { NotificationList } from "@/features/notifications/components/NotificationList";
 import type { NotificationItem } from "@/features/notifications/types";
-import { WorkspaceInvitationList } from "@/features/workspace/components/WorkspaceInvitationList";
 
 export function NotificationButton({ invitations, notifications }: { invitations: any[]; notifications: NotificationItem[] }) {
   const [open, setOpen] = useState(false);
-  const unreadCount = invitations.length + notifications.filter((notification) => !notification.readAt).length;
+  const pendingWorkspaceIds = new Set(invitations.map((invitation) => invitation.workspaceId));
+  const visibleNotifications = notifications.filter(
+    (notification) => !(notification.type === "INVITATION" && notification.workspace?.id && pendingWorkspaceIds.has(notification.workspace.id) && notification.title.includes("คำเชิญเข้า")),
+  );
+  const unreadCount = invitations.length + visibleNotifications.filter((notification) => !notification.readAt).length;
 
   return (
     <>
@@ -28,18 +31,12 @@ export function NotificationButton({ invitations, notifications }: { invitations
       </button>
 
       <Modal title="การแจ้งเตือน" open={open} onClose={() => setOpen(false)}>
-        <div className="grid gap-4">
-          <div className="rounded-2xl bg-blue-50 p-4">
-            <p className="font-bold text-slate-950">ศูนย์การแจ้งเตือน</p>
-            <p className="mt-1 text-sm text-slate-500">รวมคำเชิญเข้า workspace และการแจ้งเตือนจากระบบไว้ในที่เดียว</p>
+        <div className="grid max-h-[72vh] gap-3 overflow-y-auto pr-1">
+          <div className="rounded-xl bg-blue-50 px-3 py-2">
+            <p className="text-sm font-bold text-slate-950">ศูนย์การแจ้งเตือน</p>
+            <p className="mt-0.5 text-xs text-slate-500">คำเชิญและการแจ้งเตือนทั้งหมดรวมอยู่ในรายการเดียว</p>
           </div>
-          {invitations.length > 0 ? (
-            <div className="grid gap-3">
-              <p className="text-sm font-semibold text-slate-700">คำเชิญเข้า Workspace</p>
-              <WorkspaceInvitationList invitations={invitations} />
-            </div>
-          ) : null}
-          {notifications.length > 0 || invitations.length === 0 ? <NotificationList notifications={notifications} /> : null}
+          <NotificationList invitations={invitations} notifications={visibleNotifications} />
         </div>
       </Modal>
     </>

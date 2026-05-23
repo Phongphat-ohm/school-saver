@@ -11,6 +11,7 @@ import { getDayList } from "@/lib/date";
 import { collectionRoundSchema } from "@/features/rounds/schemas";
 
 const payableStatuses = ["UNPAID", "PARTIAL", "OVERDUE", "PARTIAL_OVERDUE"] as const;
+const roundMemberModes = ["COLLECT", "WAIVE", "SKIP"] as const;
 
 type SummaryInput = {
   status: string;
@@ -39,6 +40,55 @@ function summarize(memberRounds: SummaryInput[]) {
   };
 }
 
+type RoundMemberMode = (typeof roundMemberModes)[number];
+
+function getCollectMemberRoundData(
+  round: {
+    targetAmount: number;
+    dueDate: Date;
+    fineEnabled: boolean;
+    fineType: "NONE" | "DAILY" | "WEEKLY" | "FIXED";
+    fineAmount: number;
+    fineMaxAmount: number | null;
+  },
+  today = new Date(),
+) {
+  const current = calculateCurrentMemberRound(
+    {
+      paidAmount: 0,
+      targetAmount: round.targetAmount,
+      fineAmount: 0,
+      status: "UNPAID",
+    },
+    round,
+    today,
+  );
+
+  return {
+    targetAmount: round.targetAmount,
+    paidAmount: 0,
+    remainingAmount: current.outstandingAmount,
+    fineAmount: current.currentFine,
+    totalRequiredAmount: current.totalRequiredAmount,
+    status: current.currentStatus,
+    completedAt: null,
+  };
+}
+
+export async function getRoundMemberSelectionAction() {
+  try {
+    const { workspaceId } = await getCurrentWorkspaceOrThrow();
+    const members = await prisma.member.findMany({
+      where: { workspaceId, status: "ACTIVE" },
+      select: { id: true, memberCode: true, studentNo: true, fullName: true, classroom: true },
+      orderBy: [{ studentNo: "asc" }, { fullName: "asc" }],
+    });
+    return successResult(members);
+  } catch {
+    return errorResult("ไม่สามารถดึงรายชื่อสมาชิกสำหรับสร้างรอบได้");
+  }
+}
+
 export async function createCollectionRoundAction(data: unknown) {
   try {
     const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
@@ -46,25 +96,46 @@ export async function createCollectionRoundAction(data: unknown) {
     if (!parsed.success) return errorResult("ข้อมูลรอบไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
     const members = await prisma.member.findMany({ where: { workspaceId, status: "ACTIVE" }, select: { id: true } });
     if (members.length === 0) return errorResult("ไม่สามารถสร้างรอบได้ เพราะยังไม่มีสมาชิก ACTIVE ใน workspace นี้");
+    const { includedMemberIds, waivedMemberIds, ...roundData } = parsed.data;
+    const activeMemberIds = new Set(members.map((member) => member.id));
+    const requestedIncludedIds = includedMemberIds?.length ? new Set(includedMemberIds) : activeMemberIds;
+    const requestedWaivedIds = new Set(waivedMemberIds ?? []);
+    const waivedIds = members.map((member) => member.id).filter((id) => requestedWaivedIds.has(id));
+    const waivedIdSet = new Set(waivedIds);
+    const includedIds = members.map((member) => member.id).filter((id) => requestedIncludedIds.has(id) && activeMemberIds.has(id) && !waivedIdSet.has(id));
+    if (includedIds.length + waivedIds.length === 0) return errorResult("กรุณาเลือกสมาชิกอย่างน้อย 1 คนสำหรับรอบนี้");
 
     const round = await prisma.$transaction(async (tx) => {
       const created = await tx.collectionRound.create({
-        data: { workspaceId, createdById: userId, ...parsed.data, status: "OPEN" },
+        data: { workspaceId, createdById: userId, ...roundData, status: "OPEN" },
       });
       await tx.memberRound.createMany({
-        data: members.map((member) => ({
-          workspaceId,
-          roundId: created.id,
-          memberId: member.id,
-          targetAmount: parsed.data.targetAmount,
-          paidAmount: 0,
-          remainingAmount: parsed.data.targetAmount,
-          fineAmount: 0,
-          totalRequiredAmount: parsed.data.targetAmount,
-          status: "UNPAID" as const,
-        })),
+        data: [
+          ...includedIds.map((memberId) => ({
+            workspaceId,
+            roundId: created.id,
+            memberId,
+            targetAmount: roundData.targetAmount,
+            paidAmount: 0,
+            remainingAmount: roundData.targetAmount,
+            fineAmount: 0,
+            totalRequiredAmount: roundData.targetAmount,
+            status: "UNPAID" as const,
+          })),
+          ...waivedIds.map((memberId) => ({
+            workspaceId,
+            roundId: created.id,
+            memberId,
+            targetAmount: 0,
+            paidAmount: 0,
+            remainingAmount: 0,
+            fineAmount: 0,
+            totalRequiredAmount: 0,
+            status: "WAIVED" as const,
+          })),
+        ],
       });
-      await writeActivityLog(tx, { workspaceId, userId, action: "CREATE_ROUND", detail: `สร้างรอบ ${created.title}` });
+      await writeActivityLog(tx, { workspaceId, userId, action: "CREATE_ROUND", detail: `สร้างรอบ ${created.title} เก็บ ${includedIds.length} คน ยกเว้น ${waivedIds.length} คน` });
       return created;
     });
     revalidatePath("/rounds");
@@ -263,6 +334,217 @@ export async function getRoundDetailAction(roundId: string) {
     return successResult({ round, memberRounds, summary, dayList: getDayList(round.startDate, round.dueDate) });
   } catch {
     return errorResult("ไม่สามารถดึงรายละเอียดรอบได้");
+  }
+}
+
+export async function getRoundMemberManagementAction(roundId: string) {
+  try {
+    const { workspaceId } = await getCurrentWorkspaceOrThrow();
+    const round = await prisma.collectionRound.findFirst({
+      where: { id: roundId, workspaceId },
+      select: {
+        id: true,
+        status: true,
+        memberRounds: {
+          select: {
+            id: true,
+            memberId: true,
+            status: true,
+            paidAmount: true,
+            _count: { select: { transactions: true } },
+            member: {
+              select: {
+                id: true,
+                memberCode: true,
+                studentNo: true,
+                fullName: true,
+                classroom: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
+
+    const activeMembers = await prisma.member.findMany({
+      where: { workspaceId, status: "ACTIVE" },
+      select: { id: true, memberCode: true, studentNo: true, fullName: true, classroom: true, status: true },
+      orderBy: [{ studentNo: "asc" }, { fullName: "asc" }],
+    });
+
+    const existingByMemberId = new Map(round.memberRounds.map((memberRound) => [memberRound.memberId, memberRound]));
+    const memberById = new Map(activeMembers.map((member) => [member.id, member]));
+    for (const memberRound of round.memberRounds) {
+      memberById.set(memberRound.memberId, memberRound.member);
+    }
+
+    const members = Array.from(memberById.values()).sort((a, b) => {
+      const studentNoCompare = String(a.studentNo ?? "").localeCompare(String(b.studentNo ?? ""), "th", { numeric: true });
+      if (studentNoCompare !== 0) return studentNoCompare;
+      return a.fullName.localeCompare(b.fullName, "th");
+    });
+
+    return successResult({
+      roundStatus: round.status,
+      members: members.map((member) => {
+        const memberRound = existingByMemberId.get(member.id);
+        const transactionCount = memberRound?._count.transactions ?? 0;
+        const mode: RoundMemberMode = memberRound ? (memberRound.status === "WAIVED" ? "WAIVE" : "COLLECT") : "SKIP";
+        return {
+          memberId: member.id,
+          memberCode: member.memberCode,
+          studentNo: member.studentNo,
+          fullName: member.fullName,
+          classroom: member.classroom,
+          memberStatus: member.status,
+          mode,
+          inRound: !!memberRound,
+          transactionCount,
+          locked: transactionCount > 0,
+        };
+      }),
+    });
+  } catch {
+    return errorResult("ไม่สามารถดึงรายชื่อสมาชิกสำหรับจัดการรอบได้");
+  }
+}
+
+export async function updateRoundMemberSelectionAction(roundId: string, selections: Array<{ memberId: string; mode: RoundMemberMode }>) {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const uniqueSelections = new Map<string, RoundMemberMode>();
+    for (const selection of selections) {
+      if (!selection?.memberId || !roundMemberModes.includes(selection.mode)) continue;
+      uniqueSelections.set(selection.memberId, selection.mode);
+    }
+    if (uniqueSelections.size === 0) return errorResult("กรุณาเลือกสมาชิกอย่างน้อย 1 รายการ");
+
+    const round = await prisma.collectionRound.findFirst({
+      where: { id: roundId, workspaceId },
+      select: {
+        id: true,
+        title: true,
+        targetAmount: true,
+        dueDate: true,
+        fineEnabled: true,
+        fineType: true,
+        fineAmount: true,
+        fineMaxAmount: true,
+        status: true,
+        memberRounds: {
+          select: {
+            id: true,
+            memberId: true,
+            status: true,
+            paidAmount: true,
+            _count: { select: { transactions: true } },
+          },
+        },
+      },
+    });
+    if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
+    if (round.status !== "OPEN") return errorResult("แก้ไขสมาชิกในรอบได้เฉพาะรอบที่เปิดอยู่เท่านั้น");
+
+    const memberIds = Array.from(uniqueSelections.keys());
+    const validMembers = await prisma.member.findMany({
+      where: {
+        workspaceId,
+        id: { in: memberIds },
+        OR: [{ status: "ACTIVE" }, { memberRounds: { some: { roundId } } }],
+      },
+      select: { id: true },
+    });
+    const validMemberIds = new Set(validMembers.map((member) => member.id));
+    const existingByMemberId = new Map(round.memberRounds.map((memberRound) => [memberRound.memberId, memberRound]));
+    const today = new Date();
+    let collectCount = 0;
+    let waiveCount = 0;
+    let skipCount = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const [memberId, mode] of uniqueSelections.entries()) {
+        if (!validMemberIds.has(memberId)) continue;
+        const existing = existingByMemberId.get(memberId);
+        const locked = (existing?._count.transactions ?? 0) > 0;
+        if (locked && mode !== "COLLECT") {
+          throw new Error("สมาชิกที่มีรายการชำระเงินแล้วต้องอยู่ในรอบแบบเก็บเงินต่อไป");
+        }
+
+        if (mode === "COLLECT") {
+          collectCount += 1;
+          if (existing) {
+            if (locked) continue;
+            await tx.memberRound.update({
+              where: { id: existing.id },
+              data: getCollectMemberRoundData(round, today),
+            });
+          } else {
+            await tx.memberRound.create({
+              data: {
+                workspaceId,
+                roundId,
+                memberId,
+                ...getCollectMemberRoundData(round, today),
+              },
+            });
+          }
+          continue;
+        }
+
+        if (mode === "WAIVE") {
+          waiveCount += 1;
+          if (existing) {
+            await tx.memberRound.update({
+              where: { id: existing.id },
+              data: {
+                targetAmount: 0,
+                paidAmount: 0,
+                remainingAmount: 0,
+                fineAmount: 0,
+                totalRequiredAmount: 0,
+                status: "WAIVED",
+                completedAt: null,
+              },
+            });
+          } else {
+            await tx.memberRound.create({
+              data: {
+                workspaceId,
+                roundId,
+                memberId,
+                targetAmount: 0,
+                paidAmount: 0,
+                remainingAmount: 0,
+                fineAmount: 0,
+                totalRequiredAmount: 0,
+                status: "WAIVED",
+              },
+            });
+          }
+          continue;
+        }
+
+        skipCount += 1;
+        if (existing) await tx.memberRound.delete({ where: { id: existing.id } });
+      }
+
+      await writeActivityLog(tx, {
+        workspaceId,
+        userId,
+        action: "UPDATE_ROUND_MEMBERS",
+        detail: `แก้ไขสมาชิกในรอบ ${round.title} เก็บ ${collectCount} คน ยกเว้น ${waiveCount} คน ไม่รวม ${skipCount} คน`,
+      });
+    });
+
+    revalidatePath("/rounds");
+    revalidatePath(`/rounds/${roundId}`);
+    revalidatePath("/payments");
+    revalidatePath("/overdue");
+    return successResult({ collectCount, waiveCount, skipCount }, "แก้ไขสมาชิกในรอบสำเร็จ");
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถแก้ไขสมาชิกในรอบได้");
   }
 }
 

@@ -91,8 +91,16 @@ async function getRequestActivityMetadata() {
     return {
       ipAddress: getClientIp(headerStore),
       userAgent: truncate(headerStore.get("user-agent"), 512),
-      method: truncate(headerStore.get("x-forwarded-method") ?? headerStore.get("x-method"), 16),
-      path: truncate(headerStore.get("next-url") ?? headerStore.get("x-invoke-path") ?? headerStore.get("referer"), 512),
+      method: truncate(headerStore.get("x-forwarded-method") ?? headerStore.get("x-method") ?? headerStore.get("x-http-method"), 16),
+      path: truncate(
+        headerStore.get("x-pathname") ??
+          headerStore.get("x-forwarded-uri") ??
+          headerStore.get("x-original-url") ??
+          headerStore.get("next-url") ??
+          headerStore.get("x-invoke-path") ??
+          normalizeRefererPath(headerStore.get("referer")),
+        512,
+      ),
     };
   } catch {
     return {
@@ -106,7 +114,24 @@ async function getRequestActivityMetadata() {
 
 function getClientIp(headerStore: Headers) {
   const forwardedFor = headerStore.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return truncate(forwardedFor ?? headerStore.get("x-real-ip") ?? headerStore.get("cf-connecting-ip"), 64);
+  return truncate(
+    forwardedFor ??
+      headerStore.get("x-real-ip") ??
+      headerStore.get("cf-connecting-ip") ??
+      headerStore.get("true-client-ip") ??
+      headerStore.get("x-client-ip"),
+    64,
+  );
+}
+
+function normalizeRefererPath(value: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return value;
+  }
 }
 
 function getPositiveInteger(value: string | undefined, fallback: number) {

@@ -5,10 +5,11 @@ import { logActivity, writeActivityLog } from "@/lib/activity-log";
 import { OWNER_ADMIN, requireWorkspaceRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { issueEmailVerificationOtp, verifyEmailOtp } from "@/lib/email-verification";
-import { getOtpRateLimitSeconds, getWorkspaceLimit } from "@/lib/platform-settings";
+import { getOtpRateLimitSeconds } from "@/lib/platform-settings";
 import { errorResult, successResult } from "@/lib/result";
 import { destroyRestoreSession, destroySession, getRestoreSession, getSession } from "@/lib/session";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { ensureWorkspaceUserLimit } from "@/lib/workspace-limits";
 import {
   cancelMyAccountSchema,
   changeMyPasswordSchema,
@@ -26,7 +27,7 @@ export async function getWorkspaceUsersAction() {
   try {
     const { workspaceId } = await requireWorkspaceRole(OWNER_ADMIN);
     const users = await prisma.workspaceMember.findMany({
-      where: { workspaceId, status: "ACTIVE" },
+      where: { workspaceId },
       include: { user: { select: { id: true, username: true, email: true, emailVerifiedAt: true, fullName: true, status: true } } },
       orderBy: { createdAt: "asc" },
     });
@@ -53,12 +54,9 @@ export async function createUserAndAddToWorkspaceAction(data: unknown) {
     });
     if (exists?.username === parsed.data.username) return errorResult("username นี้มีแล้ว");
     if (exists?.email === parsed.data.email) return errorResult("อีเมลนี้มีแล้ว");
-    const [activeUsers, maxUsers] = await Promise.all([
-      prisma.workspaceMember.count({ where: { workspaceId, status: "ACTIVE" } }),
-      getWorkspaceLimit(workspaceId, "max_workspace_users", 30),
-    ]);
-    if (activeUsers + 1 > maxUsers) return errorResult(`workspace นี้มีผู้ใช้ครบตาม limit แล้ว (${activeUsers}/${maxUsers} คน)`);
+    await ensureWorkspaceUserLimit(workspaceId);
     const user = await prisma.$transaction(async (tx) => {
+      await ensureWorkspaceUserLimit(workspaceId, 1, tx);
       const created = await tx.user.create({
         data: {
           username: parsed.data.username,
@@ -126,6 +124,36 @@ export async function disableWorkspaceUserAction(id: string) {
     return successResult(updated, "ปิดใช้งานผู้ใช้ใน workspace แล้ว");
   } catch {
     return errorResult("ไม่สามารถปิดใช้งานผู้ใช้ได้");
+  }
+}
+
+export async function enableWorkspaceUserAction(id: string) {
+  try {
+    const { workspaceId, userId, role: actorRole } = await requireWorkspaceRole(OWNER_ADMIN);
+    const membership = await prisma.workspaceMember.findFirst({
+      where: { id, workspaceId },
+      include: { user: { select: { id: true, fullName: true, status: true } } },
+    });
+    if (!membership) return errorResult("ไม่พบผู้ใช้ใน workspace นี้");
+    if (membership.status === "ACTIVE") return errorResult("ผู้ใช้นี้เปิดใช้งานอยู่แล้ว");
+    if (membership.cancelledAt || membership.user.status !== "ACTIVE") return errorResult("บัญชีผู้ใช้นี้ถูกปิดระดับบัญชี ต้องกู้คืนบัญชีก่อนเปิดใช้งานใน workspace");
+    if (actorRole === "ADMIN" && membership.role === "OWNER") return errorResult("ผู้ดูแลไม่สามารถเปิดใช้งาน OWNER ได้");
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.workspaceInvitation.deleteMany({
+        where: { workspaceId, invitedUserId: membership.userId, status: "PENDING" },
+      });
+      await ensureWorkspaceUserLimit(workspaceId, 1, tx);
+      const saved = await tx.workspaceMember.update({ where: { id }, data: { status: "ACTIVE" } });
+      await writeActivityLog(tx, { workspaceId, userId, action: "ENABLE_USER", detail: `เปิดใช้งานผู้ใช้ ${membership.user.fullName} ใน workspace` });
+      return saved;
+    });
+
+    revalidatePath("/users");
+    revalidatePath("/workspaces");
+    return successResult(updated, "เปิดใช้งานผู้ใช้ใน workspace แล้ว");
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถเปิดใช้งานผู้ใช้ได้");
   }
 }
 

@@ -138,10 +138,11 @@ export async function payMemberRoundAction(data: unknown) {
         where: { id: parsed.data.memberRoundId, workspaceId },
         include: {
           round: true,
-          member: { select: { id: true, fullName: true } },
+          member: { select: { id: true, fullName: true, status: true } },
         },
       });
       if (!memberRound) throw new Error("ไม่พบรายการสมาชิกในรอบนี้");
+      if (memberRound.member.status !== "ACTIVE") throw new Error("สมาชิกนี้ถูกลบหรือไม่ได้เปิดใช้งาน ไม่สามารถรับชำระเงินได้");
       if (memberRound.round.status === "CANCELLED") throw new Error("รอบนี้ถูกยกเลิกแล้ว ไม่สามารถรับชำระได้");
       if (["PAID", "LATE_PAID", "WAIVED"].includes(memberRound.status)) throw new Error("รายการนี้ปิดยอดแล้ว");
       const method = await tx.paymentMethod.findFirst({
@@ -483,7 +484,7 @@ export async function getUnpaidAndPartialPaymentsAction(roundId?: string) {
   try {
     const { workspaceId } = await getCurrentWorkspaceOrThrow();
     const rows = await prisma.memberRound.findMany({
-      where: { workspaceId, roundId, status: { in: [...unpaidStatuses] }, round: { status: "OPEN" } },
+      where: { workspaceId, roundId, status: { in: [...unpaidStatuses] }, round: { status: "OPEN" }, member: { status: "ACTIVE" } },
       select: {
         id: true,
         workspaceId: true,

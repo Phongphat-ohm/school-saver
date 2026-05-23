@@ -9,6 +9,7 @@ const DEFAULTS = {
   maintenance_mode: "false",
   otp_rate_limit_seconds: "60",
   default_workspace_status: "ACTIVE",
+  billing_plan_default: "FREE",
 } as const;
 
 function parseBoolean(value: string | undefined, fallback: boolean) {
@@ -63,6 +64,10 @@ export async function getWorkspaceLimit(workspaceId: string, key: string, fallba
 
 export async function getWorkspaceMemberLimit(workspaceId: string) {
   return getWorkspaceLimit(workspaceId, "max_members", await getPlatformMemberLimit());
+}
+
+export async function getDefaultBillingPlan() {
+  return (await getPlatformSetting("billing_plan_default")) ?? DEFAULTS.billing_plan_default;
 }
 
 export async function getWorkspaceFeatureFlag(workspaceId: string, key: string, fallback = false) {
