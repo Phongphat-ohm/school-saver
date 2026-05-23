@@ -16,7 +16,7 @@ export default async function AdminWorkspaceDetailPage({ params }: { params: Pro
     return <EmptyState title="ไม่สามารถดึงรายละเอียดเวิร์กสเปซได้" description={result.message} />;
   }
 
-  const { workspace, totals, memberStatusGroups, roundStatusGroups } = result.data;
+  const { workspace, totals, memberStatusGroups, roundStatusGroups, audit } = result.data;
 
   return (
     <div className="grid gap-5">
@@ -58,6 +58,69 @@ export default async function AdminWorkspaceDetailPage({ params }: { params: Pro
           <div className="grid gap-3 sm:grid-cols-2">
             <SummaryBlock title="สมาชิก" rows={memberStatusGroups.map((row) => ({ label: row.status, value: row.count }))} />
             <SummaryBlock title="รอบ" rows={roundStatusGroups.map((row) => ({ label: row.status, value: row.count }))} />
+          </div>
+        </Panel>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-3">
+        <Panel title="Audit: รหัสสมาชิกซ้ำ">
+          <div className="grid max-h-[24rem] gap-2 overflow-y-auto pr-1">
+            {audit.duplicateMemberCodes.map((item) => (
+              <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3" key={item.memberCode}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-black text-slate-950">รหัส {item.memberCode}</p>
+                    <p className="mt-1 text-xs font-semibold text-amber-800">
+                      ทั้งหมด {item.total} · ACTIVE {item.activeCount} · HIDDEN {item.hiddenCount}
+                    </p>
+                  </div>
+                  <Pill tone={item.activeCount > 1 ? "rose" : "amber"}>{item.activeCount > 1 ? "ต้องตรวจ" : "ปกติ"}</Pill>
+                </div>
+                <div className="mt-2 grid gap-1">
+                  {item.members.map((member) => (
+                    <p className="text-xs text-slate-600" key={member.id}>
+                      {member.fullName} · {member.status}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {!audit.duplicateMemberCodes.length ? <p className="text-sm text-slate-500">ไม่พบรหัสสมาชิกซ้ำ</p> : null}
+          </div>
+        </Panel>
+
+        <Panel title="Health: สมาชิกถูกลบแต่มียอดค้าง">
+          <div className="mb-3 rounded-2xl bg-slate-50 p-3">
+            <p className="text-xs font-semibold text-slate-500">ยอดค้างรวมในรอบเปิด</p>
+            <p className="mt-1 text-lg font-black text-slate-950">{formatMoney(audit.hiddenOpenOutstandingTotal)}</p>
+          </div>
+          <div className="grid max-h-[20rem] gap-2 overflow-y-auto pr-1">
+            {audit.hiddenOpenOutstandingRows.map((row) => (
+              <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3" key={row.id}>
+                <p className="font-bold text-slate-950">{row.member.fullName}</p>
+                <p className="mt-1 text-xs text-slate-600">รหัส {row.member.memberCode} · {row.round.title}</p>
+                <p className="mt-2 text-sm font-black text-rose-700">{formatMoney(row.remainingAmount)}</p>
+              </div>
+            ))}
+            {!audit.hiddenOpenOutstandingRows.length ? <p className="text-sm text-slate-500">ไม่พบสมาชิกที่ถูกลบแล้วยังค้างในรอบเปิด</p> : null}
+          </div>
+        </Panel>
+
+        <Panel title="Audit: แก้ไขสมาชิกในรอบ">
+          <div className="grid max-h-[24rem] gap-2 overflow-y-auto pr-1">
+            {audit.roundMemberAuditLogs.map((log) => (
+              <div className="rounded-2xl border border-slate-200 p-3" key={log.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-slate-950">{log.user?.fullName ?? log.user?.username ?? "ระบบ"}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-slate-500">{log.detail ?? "-"}</p>
+                    <p className="mt-1 text-xs text-slate-400">{formatThaiDateTime(log.createdAt)}</p>
+                  </div>
+                  <Pill tone={log.outcome === "SUCCESS" ? "emerald" : "rose"}>{log.outcome}</Pill>
+                </div>
+              </div>
+            ))}
+            {!audit.roundMemberAuditLogs.length ? <p className="text-sm text-slate-500">ยังไม่มี log การแก้ไขสมาชิกในรอบ</p> : null}
           </div>
         </Panel>
       </section>

@@ -650,7 +650,15 @@ export async function getAdminWorkspaceDetailAction(data: unknown) {
 
     if (!workspace) return errorResult("ไม่พบ workspace");
 
-    const [paymentTotals, outstandingTotals, memberStatusGroups, roundStatusGroups] = await Promise.all([
+    const [
+      paymentTotals,
+      outstandingTotals,
+      memberStatusGroups,
+      roundStatusGroups,
+      memberCodeRows,
+      hiddenOpenOutstandingRows,
+      roundMemberAuditLogs,
+    ] = await Promise.all([
       prisma.paymentTransaction.aggregate({
         where: { workspaceId: workspace.id },
         _sum: { amount: true },
@@ -671,7 +679,59 @@ export async function getAdminWorkspaceDetailAction(data: unknown) {
         where: { workspaceId: workspace.id },
         _count: { _all: true },
       }),
+      prisma.member.findMany({
+        where: { workspaceId: workspace.id },
+        select: { id: true, memberCode: true, fullName: true, status: true, updatedAt: true },
+        orderBy: [{ memberCode: "asc" }, { updatedAt: "desc" }],
+      }),
+      prisma.memberRound.findMany({
+        where: {
+          workspaceId: workspace.id,
+          remainingAmount: { gt: 0 },
+          round: { status: "OPEN" },
+          member: { status: "HIDDEN" },
+        },
+        select: {
+          id: true,
+          remainingAmount: true,
+          status: true,
+          member: { select: { id: true, memberCode: true, fullName: true, status: true } },
+          round: { select: { id: true, title: true, status: true } },
+        },
+        orderBy: { remainingAmount: "desc" },
+        take: 20,
+      }),
+      prisma.activityLog.findMany({
+        where: { workspaceId: workspace.id, action: "UPDATE_ROUND_MEMBERS" },
+        select: {
+          id: true,
+          action: true,
+          detail: true,
+          outcome: true,
+          createdAt: true,
+          user: { select: { id: true, fullName: true, username: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
     ]);
+
+    const memberCodeGroups = new Map<string, typeof memberCodeRows>();
+    for (const member of memberCodeRows) {
+      const rows = memberCodeGroups.get(member.memberCode) ?? [];
+      rows.push(member);
+      memberCodeGroups.set(member.memberCode, rows);
+    }
+    const duplicateMemberCodes = Array.from(memberCodeGroups.entries())
+      .filter(([, rows]) => rows.length > 1)
+      .map(([memberCode, rows]) => ({
+        memberCode,
+        total: rows.length,
+        activeCount: rows.filter((row) => row.status === "ACTIVE").length,
+        hiddenCount: rows.filter((row) => row.status === "HIDDEN").length,
+        members: rows.slice(0, 5),
+      }))
+      .slice(0, 20);
 
     return successResult({
       workspace,
@@ -683,6 +743,12 @@ export async function getAdminWorkspaceDetailAction(data: unknown) {
       },
       memberStatusGroups: memberStatusGroups.map((row) => ({ status: row.status, count: row._count._all })),
       roundStatusGroups: roundStatusGroups.map((row) => ({ status: row.status, count: row._count._all })),
+      audit: {
+        duplicateMemberCodes,
+        hiddenOpenOutstandingRows,
+        roundMemberAuditLogs,
+        hiddenOpenOutstandingTotal: hiddenOpenOutstandingRows.reduce((sum, row) => sum + row.remainingAmount, 0),
+      },
     });
   } catch (error) {
     return errorResult(error instanceof Error ? error.message : "ไม่สามารถดึงรายละเอียด workspace ได้");
