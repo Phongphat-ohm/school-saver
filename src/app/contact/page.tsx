@@ -4,19 +4,19 @@ import { AppLayout } from "@/components/layout/AppLayout";
 const contactItems = [
   {
     title: "Support",
-    value: "support@schoolsaver.local",
+    value: "support@ppkxb.space",
     detail: "แจ้งปัญหาการใช้งาน workspace, ผู้ใช้, การชำระเงิน และรายงาน",
     icon: MessageCircle,
   },
   {
     title: "Security",
-    value: "security@schoolsaver.local",
+    value: "security@ppkxb.space",
     detail: "แจ้งเหตุผิดปกติด้านบัญชี สิทธิ์การเข้าถึง หรือ activity log",
     icon: ShieldCheck,
   },
   {
     title: "Email",
-    value: "hello@schoolsaver.local",
+    value: "hello@ppkxb.space",
     detail: "ติดต่อทีม SchoolSaver สำหรับคำถามทั่วไป",
     icon: Mail,
   },

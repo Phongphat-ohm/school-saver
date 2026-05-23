@@ -48,8 +48,8 @@ export default function proxy(request: NextRequest) {
     pathname === "/forgot-password" ||
     pathname.startsWith("/reset-password/") ||
     pathname === "/terms" ||
+    pathname === "/" ||
     pathname === "/privacy";
-
   if (isRestorePage && !hasRestoreSession) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
