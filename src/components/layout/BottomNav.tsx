@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { BriefcaseBusiness, CalendarClock, CircleAlert, Home, Menu, ShieldCheck, WalletCards } from "lucide-react";
 import type { WorkspaceRole } from "@/generated/prisma/client";
 import { routes } from "@/constants/routes";
 import { getCurrentWorkspaceRole, isSuperAdmin } from "@/lib/permissions";
+import { NavLink } from "@/components/layout/NavLink";
 
 const items: Array<{ label: string; href: string; icon: typeof Home; allowedRoles: WorkspaceRole[] }> = [
   { label: "หน้าแรก", href: routes.dashboard, icon: Home, allowedRoles: ["OWNER", "ADMIN", "COLLECTOR", "VIEWER"] },
@@ -24,14 +24,16 @@ export async function BottomNav() {
       style={{ gridTemplateColumns: `repeat(${navItems.length || 1}, minmax(0, 1fr))` }}
     >
       {navItems.map((item) => (
-        <Link
+        <NavLink
           key={item.href}
           href={item.href}
           className="grid min-h-14 justify-items-center gap-1 rounded-2xl px-1.5 py-2 text-center text-[10px] font-semibold text-slate-600 hover:bg-blue-50 hover:text-blue-700"
+          activeClassName="bg-blue-50 text-blue-700"
+          showPendingIndicator={false}
         >
           <item.icon size={18} />
           <span className="leading-none">{item.label}</span>
-        </Link>
+        </NavLink>
       ))}
     </nav>
   );

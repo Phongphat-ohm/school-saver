@@ -1,9 +1,12 @@
 ﻿"use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { Download, KeyRound, Power, Search, Send, ShieldCheck, UserCheck, X } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { Download, Edit3, KeyRound, Maximize2, Power, Search, Send, ShieldCheck, UserCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { MarkdownEditor } from "@/components/ui/MarkdownEditor";
+import { Modal } from "@/components/ui/Modal";
+import { renderSafeMarkdown } from "@/lib/markdown";
 import {
   enterSupportSessionAction,
   endSupportSessionAction,
@@ -25,7 +28,7 @@ import {
   upsertWorkspaceFeatureFlagAction,
   upsertWorkspaceLimitAction,
 } from "@/features/admin/actions";
-import { showConfirm, showError, showSuccess } from "@/lib/swal";
+import { closeLoading, showConfirm, showError, showLoading, showSuccess } from "@/lib/swal";
 
 type ActionResultLike = Promise<{ success: boolean; message?: string }>;
 
@@ -147,6 +150,8 @@ export function AnnouncementForm({
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
+  const messagePreviewHtml = useMemo(() => renderSafeMarkdown(message), [message]);
   const filteredUsers = users.filter((user) => {
     const query = userSearch.trim().toLowerCase();
     if (!query) return true;
@@ -165,50 +170,66 @@ export function AnnouncementForm({
   }
 
   function submit() {
+    setComposerOpen(false);
+    showLoading("กำลังส่งการแจ้งเตือน");
     startTransition(async () => {
-      const result = await sendPlatformAnnouncementAction({
-        target: target === "GROUP" ? "USER" : target,
-        workspaceId: target === "WORKSPACE" ? workspaceId : undefined,
-        groupId: target === "GROUP" ? groupId : undefined,
-        userIds: target === "USER" ? selectedUserIds : undefined,
-        title,
-        message,
-      });
-      if (!result.success) {
-        await showError(result.message);
-        return;
+      try {
+        const result = await sendPlatformAnnouncementAction({
+          target: target === "GROUP" ? "USER" : target,
+          workspaceId: target === "WORKSPACE" ? workspaceId : undefined,
+          groupId: target === "GROUP" ? groupId : undefined,
+          userIds: target === "USER" ? selectedUserIds : undefined,
+          title,
+          message,
+        });
+        closeLoading();
+        if (!result.success) {
+          await showError(result.message);
+          return;
+        }
+        await showSuccess(result.message ?? "ส่งประกาศแล้ว");
+        setTitle("");
+        setMessage("");
+        setSelectedUserIds([]);
+        setUserSearch("");
+        router.refresh();
+      } catch (error) {
+        closeLoading();
+        await showError(error instanceof Error ? error.message : "ไม่สามารถส่งประกาศได้");
       }
-      await showSuccess(result.message ?? "ส่งประกาศแล้ว");
-      setTitle("");
-      setMessage("");
-      setSelectedUserIds([]);
-      setUserSearch("");
-      router.refresh();
     });
   }
 
   function schedule() {
+    setComposerOpen(false);
+    showLoading("กำลังนัดส่งการแจ้งเตือน");
     startTransition(async () => {
-      const result = await schedulePlatformAnnouncementAction({
-        target: target === "GROUP" ? "USER" : target,
-        workspaceId: target === "WORKSPACE" ? workspaceId : undefined,
-        groupId: target === "GROUP" ? groupId : undefined,
-        userIds: target === "USER" ? selectedUserIds : undefined,
-        title,
-        message,
-        scheduledAt,
-      });
-      if (!result.success) {
-        await showError(result.message);
-        return;
+      try {
+        const result = await schedulePlatformAnnouncementAction({
+          target: target === "GROUP" ? "USER" : target,
+          workspaceId: target === "WORKSPACE" ? workspaceId : undefined,
+          groupId: target === "GROUP" ? groupId : undefined,
+          userIds: target === "USER" ? selectedUserIds : undefined,
+          title,
+          message,
+          scheduledAt,
+        });
+        closeLoading();
+        if (!result.success) {
+          await showError(result.message);
+          return;
+        }
+        await showSuccess(result.message ?? "นัดส่งประกาศแล้ว");
+        setTitle("");
+        setMessage("");
+        setScheduledAt("");
+        setSelectedUserIds([]);
+        setUserSearch("");
+        router.refresh();
+      } catch (error) {
+        closeLoading();
+        await showError(error instanceof Error ? error.message : "ไม่สามารถนัดส่งประกาศได้");
       }
-      await showSuccess(result.message ?? "นัดส่งประกาศแล้ว");
-      setTitle("");
-      setMessage("");
-      setScheduledAt("");
-      setSelectedUserIds([]);
-      setUserSearch("");
-      router.refresh();
     });
   }
 
@@ -221,6 +242,16 @@ export function AnnouncementForm({
 
   return (
     <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="font-black text-slate-950">ส่งข้อความ</h2>
+          <p className="text-xs text-slate-500">เขียนเป็น Markdown และดูพรีวิวก่อนส่งได้</p>
+        </div>
+        <Button className="gap-2" type="button" variant="secondary" onClick={() => setComposerOpen(true)}>
+          <Maximize2 size={16} />
+          เปิด editor
+        </Button>
+      </div>
       {templates.length ? (
         <select className="min-h-11 rounded-2xl border border-slate-200 px-3" defaultValue="" onChange={(event) => useTemplate(event.target.value)}>
           <option value="">ใช้ template ข้อความ</option>
@@ -292,7 +323,25 @@ export function AnnouncementForm({
         </div>
       ) : null}
       <input className="min-h-11 rounded-2xl border border-slate-200 px-4 text-sm" placeholder="หัวข้อประกาศ" value={title} onChange={(event) => setTitle(event.target.value)} />
-      <textarea className="min-h-32 rounded-2xl border border-slate-200 p-4 text-sm" placeholder="รายละเอียดประกาศ" value={message} onChange={(event) => setMessage(event.target.value)} />
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-black text-slate-950">รายละเอียดประกาศ</p>
+            <p className="text-xs text-slate-500">แก้ไขข้อความใน modal เพื่อพื้นที่เขียนที่ใหญ่และอ่านง่าย</p>
+          </div>
+          <Button className="gap-2" type="button" variant="secondary" onClick={() => setComposerOpen(true)}>
+            <Edit3 size={16} />
+            แก้ไขข้อความ
+          </Button>
+        </div>
+        <div className="markdown-body max-h-56 min-h-32 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-7 text-slate-700">
+          {messagePreviewHtml ? (
+            <div dangerouslySetInnerHTML={{ __html: messagePreviewHtml }} />
+          ) : (
+            <p className="text-slate-400">ยังไม่มีข้อความ กด “แก้ไขข้อความ” เพื่อเปิด editor</p>
+          )}
+        </div>
+      </div>
       <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
         <input className="min-h-11 rounded-2xl border border-slate-200 px-4 text-sm" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
         <Button disabled={pending || !targetReady || !scheduledAt || title.trim().length < 3 || message.trim().length < 3} type="button" variant="secondary" onClick={schedule}>
@@ -303,6 +352,32 @@ export function AnnouncementForm({
           ส่งทันที
         </Button>
       </div>
+      <Modal title="เขียนข้อความประกาศ" open={composerOpen} onClose={() => setComposerOpen(false)} size="screen">
+        <div className="grid gap-4">
+          <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
+            <input className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm" placeholder="หัวข้อประกาศ" value={title} onChange={(event) => setTitle(event.target.value)} />
+            <input className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
+          </div>
+          <MarkdownEditor
+            label="เนื้อหาข้อความ"
+            minHeightClassName="min-h-[52dvh]"
+            value={message}
+            onChange={setMessage}
+          />
+          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+            <Button type="button" variant="secondary" onClick={() => setComposerOpen(false)}>
+              ปิด editor
+            </Button>
+            <Button disabled={pending || !targetReady || !scheduledAt || title.trim().length < 3 || message.trim().length < 3} type="button" variant="secondary" onClick={schedule}>
+              นัดส่ง
+            </Button>
+            <Button disabled={pending || !targetReady || title.trim().length < 3 || message.trim().length < 3} type="button" onClick={submit}>
+              <Send className="mr-2" size={16} />
+              ส่งทันที
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -334,7 +409,12 @@ export function AnnouncementTemplateForm() {
       <h2 className="font-black text-slate-950">เทมเพลตข้อความ</h2>
       <input className="min-h-11 rounded-2xl border border-slate-200 px-4 text-sm" placeholder="ชื่อ template" value={name} onChange={(event) => setName(event.target.value)} />
       <input className="min-h-11 rounded-2xl border border-slate-200 px-4 text-sm" placeholder="หัวข้อ" value={title} onChange={(event) => setTitle(event.target.value)} />
-      <textarea className="min-h-28 rounded-2xl border border-slate-200 p-4 text-sm" placeholder="ข้อความ" value={message} onChange={(event) => setMessage(event.target.value)} />
+      <MarkdownEditor
+        label="ข้อความ template"
+        minHeightClassName="min-h-40"
+        value={message}
+        onChange={setMessage}
+      />
       <Button disabled={pending || name.trim().length < 2 || title.trim().length < 3 || message.trim().length < 3} type="button" onClick={submit}>บันทึกเทมเพลต</Button>
     </div>
   );

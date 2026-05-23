@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, ExternalLink, Inbox, Mail, Maximize2, X } from "lucide-react";
+import { Check, ExternalLink, Inbox, Mail, Maximize2, Trash2, X } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 import { roleLabels } from "@/constants/roles";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { markAllNotificationsReadAction, markNotificationReadAction } from "@/features/notifications/actions";
+import { deleteReadNotificationsAction, markAllNotificationsReadAction, markNotificationReadAction } from "@/features/notifications/actions";
 import type { NotificationItem } from "@/features/notifications/types";
 import { acceptWorkspaceInvitationAction, declineWorkspaceInvitationAction } from "@/features/workspace/actions";
 import { renderSafeMarkdown } from "@/lib/markdown";
@@ -50,6 +50,7 @@ export function NotificationList({ invitations = [], notifications }: { invitati
   const [selected, setSelected] = useState<UnifiedItem | null>(null);
   const visibleNotifications = notifications.filter((notification) => !isInvitationNotificationDuplicate(notification, invitations));
   const unreadCount = visibleNotifications.filter((notification) => !notification.readAt).length;
+  const readCount = visibleNotifications.filter((notification) => notification.readAt).length;
   const items = useMemo<UnifiedItem[]>(
     () =>
       [
@@ -80,6 +81,22 @@ export function NotificationList({ invitations = [], notifications }: { invitati
         await showError(result.message);
         return;
       }
+      router.refresh();
+    });
+  }
+
+  function deleteRead() {
+    startTransition(async () => {
+      if (!(await showConfirm("ลบการแจ้งเตือนที่อ่านแล้ว", "ต้องการลบการแจ้งเตือนที่อ่านแล้วทั้งหมดหรือไม่?"))) return;
+      showLoading("กำลังลบการแจ้งเตือน");
+      const result = await deleteReadNotificationsAction();
+      closeLoading();
+      if (!result.success) {
+        await showError(result.message);
+        return;
+      }
+      await showSuccess(result.message ?? "ลบการแจ้งเตือนที่อ่านแล้ว");
+      setSelected(null);
       router.refresh();
     });
   }
@@ -125,11 +142,19 @@ export function NotificationList({ invitations = [], notifications }: { invitati
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-semibold text-slate-700">รายการล่าสุด</p>
-        {unreadCount > 0 ? (
-          <Button className="min-h-8 rounded-xl px-3 py-1 text-xs" disabled={pending} type="button" variant="secondary" onClick={markAll}>
-            อ่านทั้งหมด
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          {readCount > 0 ? (
+            <Button className="min-h-8 rounded-xl px-3 py-1 text-xs" disabled={pending} type="button" variant="danger" onClick={deleteRead}>
+              <Trash2 className="mr-1" size={13} />
+              ลบที่อ่านแล้ว
+            </Button>
+          ) : null}
+          {unreadCount > 0 ? (
+            <Button className="min-h-8 rounded-xl px-3 py-1 text-xs" disabled={pending} type="button" variant="secondary" onClick={markAll}>
+              อ่านทั้งหมด
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid max-h-[28rem] gap-2 overflow-y-auto pr-1">
@@ -165,13 +190,13 @@ export function NotificationList({ invitations = [], notifications }: { invitati
 
           const notification = item.notification;
           const isUnread = !notification.readAt;
+          const notificationHref = getNotificationHref(notification);
           const content = (
             <div className="min-w-0">
               <div className="flex items-start gap-2">
                 <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-950">{notification.title}</p>
-                {notification.linkUrl ? <ExternalLink className="mt-0.5 shrink-0 text-slate-400" size={14} /> : null}
+                {notificationHref ? <ExternalLink className="mt-0.5 shrink-0 text-slate-400" size={14} /> : null}
               </div>
-              {notification.message ? <p className="mt-0.5 line-clamp-1 text-xs leading-5 text-slate-500">{notification.message}</p> : null}
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
                 {notification.workspace?.name ? <span className="truncate">{notification.workspace.name}</span> : null}
                 <span>{formatTime(notification.createdAt)}</span>
@@ -182,8 +207,8 @@ export function NotificationList({ invitations = [], notifications }: { invitati
           return (
             <div className={`flex items-start gap-3 rounded-xl border p-3 ${isUnread ? "border-blue-100 bg-blue-50/70" : "border-slate-200 bg-white"}`} key={item.id}>
               <span className={`mt-2 size-2 shrink-0 rounded-full ${isUnread ? "bg-blue-500" : "bg-slate-200"}`} />
-              {notification.linkUrl ? (
-                <Link className="min-w-0 flex-1" href={notification.linkUrl} onClick={() => markOne(notification.id)}>
+              {notificationHref ? (
+                <Link className="min-w-0 flex-1" href={notificationHref} onClick={() => markOne(notification.id)}>
                   {content}
                 </Link>
               ) : (
@@ -216,12 +241,12 @@ export function NotificationList({ invitations = [], notifications }: { invitati
         title={selected?.kind === "invitation" ? `คำเชิญเข้า ${selected.invitation.workspace.name}` : selected?.notification.title ?? "Notification"}
         open={!!selected}
         onClose={() => setSelected(null)}
-        size="lg"
+        size="screen"
       >
         {selected ? (
-          <div className="grid gap-4">
+          <div className="flex h-full min-h-0 flex-col gap-4">
             {selected.kind === "invitation" ? (
-              <div className="grid gap-3 rounded-lg border border-amber-100 bg-amber-50 p-4 text-sm text-slate-700">
+              <div className="grid shrink-0 gap-3 rounded-lg border border-amber-100 bg-amber-50 p-4 text-sm text-slate-700">
                 <p>
                   <span className="font-semibold">เชิญโดย:</span> {selected.invitation.invitedBy.fullName}
                 </p>
@@ -229,18 +254,25 @@ export function NotificationList({ invitations = [], notifications }: { invitati
                   <span className="font-semibold">สิทธิ์:</span> {roleLabels[selected.invitation.role as keyof typeof roleLabels] ?? selected.invitation.role}
                 </p>
                 <p className="text-xs text-slate-500">{formatTime(selected.invitation.createdAt)}</p>
+                <Link
+                  className="inline-flex min-h-10 w-fit items-center gap-2 rounded-lg bg-amber-600 px-4 text-sm font-bold text-white hover:bg-amber-700"
+                  href={getInvitationJoinHref(selected.invitation.workspaceId)}
+                >
+                  เปิดหน้าเข้าร่วม workspace
+                  <ExternalLink size={16} />
+                </Link>
               </div>
             ) : null}
             <div
-              className="markdown-body max-h-[52vh] overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-700"
+              className="markdown-body min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm leading-7 text-slate-700"
               dangerouslySetInnerHTML={{ __html: selectedHtml || "<p>ไม่มีรายละเอียดเพิ่มเติม</p>" }}
             />
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-slate-400">
               {selected.kind === "notification" && selected.notification.workspace?.name ? <span>{selected.notification.workspace.name}</span> : null}
               <span>{formatTime(selected.createdAt)}</span>
             </div>
             {selected.kind === "invitation" ? (
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid shrink-0 gap-2 sm:grid-cols-2">
                 <Button type="button" className="gap-2" disabled={pending} onClick={() => acceptInvitation(selected.invitation.id)}>
                   <Check size={16} />
                   ตอบรับ
@@ -250,8 +282,8 @@ export function NotificationList({ invitations = [], notifications }: { invitati
                   ปฏิเสธ
                 </Button>
               </div>
-            ) : selected.notification.linkUrl ? (
-              <Link className="inline-flex min-h-10 w-fit items-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white" href={selected.notification.linkUrl}>
+            ) : getNotificationHref(selected.notification) ? (
+              <Link className="inline-flex min-h-10 w-fit items-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-bold text-white" href={getNotificationHref(selected.notification) ?? "#"}>
                 เปิดหน้าที่เกี่ยวข้อง
                 <ExternalLink size={16} />
               </Link>
@@ -261,4 +293,15 @@ export function NotificationList({ invitations = [], notifications }: { invitati
       </Modal>
     </div>
   );
+}
+
+function getInvitationJoinHref(workspaceId: string) {
+  return `/workspaces/join/${encodeURIComponent(workspaceId)}`;
+}
+
+function getNotificationHref(notification: NotificationItem) {
+  if (notification.type === "INVITATION" && notification.workspace?.id) {
+    return getInvitationJoinHref(notification.workspace.id);
+  }
+  return notification.linkUrl ?? null;
 }

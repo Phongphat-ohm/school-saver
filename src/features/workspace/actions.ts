@@ -305,7 +305,7 @@ export async function sendWorkspaceInvitationAction(data: unknown) {
           type: "INVITATION",
           title: "มีคำเชิญเข้า Workspace",
           message: `${created.invitedBy.fullName} เชิญคุณเข้า ${created.workspace.name} ในสิทธิ์ ${created.role}`,
-          linkUrl: "/workspaces",
+          linkUrl: `/workspaces/join/${workspaceId}`,
         },
       });
       return created;
