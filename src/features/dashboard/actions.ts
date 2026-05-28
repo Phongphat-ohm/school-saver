@@ -38,12 +38,12 @@ export async function getDashboardSummaryAction() {
         _count: { _all: true },
       }),
       prisma.paymentTransaction.aggregate({
-        where: { workspaceId, paidAt: { gte: todayStart, lte: todayEnd } },
+        where: { workspaceId, paidAt: { gte: todayStart, lte: todayEnd }, round: { status: "OPEN" } },
         _sum: { amount: true },
         _count: { _all: true },
       }),
       prisma.paymentTransaction.findMany({
-        where: { workspaceId },
+        where: { workspaceId, round: { status: "OPEN" } },
         select: {
           id: true,
           amount: true,
@@ -73,7 +73,7 @@ export async function getDashboardSummaryAction() {
         take: 5,
       }),
       prisma.collectionRound.findMany({
-        where: { workspaceId },
+        where: { workspaceId, status: "OPEN" },
         select: {
           id: true,
           title: true,
@@ -91,7 +91,7 @@ export async function getDashboardSummaryAction() {
       ? await Promise.all([
           prisma.memberRound.groupBy({
             by: ["roundId"],
-            where: { workspaceId, roundId: { in: recentRoundIds } },
+            where: { workspaceId, roundId: { in: recentRoundIds }, round: { status: "OPEN" } },
             _sum: {
               targetAmount: true,
               paidAmount: true,
@@ -102,7 +102,7 @@ export async function getDashboardSummaryAction() {
           }),
           prisma.memberRound.groupBy({
             by: ["roundId", "status"],
-            where: { workspaceId, roundId: { in: recentRoundIds } },
+            where: { workspaceId, roundId: { in: recentRoundIds }, round: { status: "OPEN" } },
             _count: { _all: true },
           }),
         ])

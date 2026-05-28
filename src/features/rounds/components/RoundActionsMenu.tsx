@@ -2,13 +2,13 @@
 
 import { useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Edit3, LockKeyhole, MoreHorizontal, RotateCcw, UnlockKeyhole } from "lucide-react";
+import { Ban, Edit3, LockKeyhole, MoreHorizontal, RotateCcw, Trash2, UnlockKeyhole } from "lucide-react";
 import clsx from "clsx";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
-import { cancelRoundAction, closeRoundAction, openRoundAction, restoreCancelledRoundAction, updateCollectionRoundAction } from "@/features/rounds/actions";
+import { cancelRoundAction, closeRoundAction, deleteCollectionRoundAction, openRoundAction, restoreCancelledRoundAction, updateCollectionRoundAction } from "@/features/rounds/actions";
 import { useActionLock } from "@/hooks/useActionLock";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { formatInputDate } from "@/lib/date";
@@ -140,6 +140,25 @@ export function RoundActionsMenu({ round, align = "right", fullWidth = false }: 
             คืนรอบ
           </button>
           <div className="my-1 border-t border-slate-100" />
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={isSubmitting}
+            onClick={(event) => {
+              const trigger = event.currentTarget;
+              startTransition(() =>
+                runAction(
+                  () => deleteCollectionRoundAction(round.id),
+                  "ลบรอบ",
+                  `ยืนยันลบรอบ ${round.title} หรือไม่? รายการสมาชิกและรายการชำระเงินของรอบนี้จะถูกลบออกจากการคำนวณทั้งหมด`,
+                  trigger,
+                ),
+              );
+            }}
+          >
+            <Trash2 size={16} />
+            ลบรอบ
+          </button>
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-45"

@@ -41,6 +41,11 @@ const icons = {
 export async function Sidebar() {
   const [role, superAdmin] = await Promise.all([getCurrentWorkspaceRole(), isSuperAdmin()]);
   const visibleItems = getNavigationItemsForRole(role);
+  const exactActiveHrefs = new Set(
+    visibleItems
+      .filter((item) => visibleItems.some((candidate) => candidate.href !== item.href && candidate.href.startsWith(`${item.href}/`)))
+      .map((item) => item.href),
+  );
 
   return (
     <aside className="relative z-10 hidden min-h-screen w-64 shrink-0 lg:block">
@@ -87,8 +92,9 @@ export async function Sidebar() {
                         href={item.href}
                         className="group flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[15px] font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
                         activeClassName="bg-white/10 text-white"
+                        exact={exactActiveHrefs.has(item.href)}
                       >
-                        <Icon size={19} className="text-slate-500 transition group-hover:text-blue-300" />
+                        <Icon size={19} className="text-slate-500 transition group-hover:text-blue-300 group-aria-[current=page]:text-blue-300" />
                         <span>{item.label}</span>
                       </NavLink>
                     );

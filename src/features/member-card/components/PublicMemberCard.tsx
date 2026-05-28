@@ -18,17 +18,27 @@ type PublicMemberCardProps = {
   workspace: { name: string; description: string | null };
 };
 
+const qrLogoSettings = {
+  src: "/images/school-saver-logo.webp",
+  height: 44,
+  width: 44,
+  excavate: true,
+} as const;
+
 export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
-  const [keyword, setKeyword] = useState("");
+  const [identifier, setIdentifier] = useState("");
+  const [verifier, setVerifier] = useState("");
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<any | null>(null);
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState("");
 
-  function search(value = keyword) {
-    const nextKeyword = value.trim();
-    setKeyword(nextKeyword);
+  function search() {
+    const nextIdentifier = identifier.trim();
+    const nextVerifier = verifier.trim();
+    setIdentifier(nextIdentifier);
+    setVerifier(nextVerifier);
     startTransition(async () => {
-      const response = await searchPublicMemberCardAction(token, nextKeyword);
+      const response = await searchPublicMemberCardAction(token, { identifier: nextIdentifier, verifier: nextVerifier });
       if (!response.success) {
         setResult(null);
         setSelectedPaymentMethodId("");
@@ -70,7 +80,7 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
     <main className="min-h-dvh bg-[#f4f7fb] bg-[linear-gradient(to_right,rgba(15,23,42,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.08)_1px,transparent_1px)] bg-[size:28px_28px] px-4 py-5 text-slate-950">
       <div className="mx-auto grid w-full max-w-6xl gap-4">
         <section className="overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-sm backdrop-blur">
-          <div className="grid gap-5 p-5 lg:grid-cols-[1fr_420px] lg:items-center">
+          <div className="grid gap-5 p-5 xl:grid-cols-[1fr_minmax(520px,620px)] xl:items-center">
             <div className="flex min-w-0 items-center gap-3">
               <Image src="/images/school-saver-logo.webp" alt="SchoolSaver" width={56} height={56} className="size-14 rounded-2xl object-contain shadow-sm" priority />
               <div className="min-w-0">
@@ -81,7 +91,7 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
             </div>
 
             <form
-              className="rounded-2xl border border-blue-100 bg-blue-50/80 p-3"
+              className="min-w-0 rounded-2xl border border-blue-100 bg-blue-50/80 p-3"
               onSubmit={(event) => {
                 event.preventDefault();
                 search();
@@ -89,42 +99,68 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
             >
               <div className="grid gap-2">
                 <label className="text-sm font-black text-blue-950" htmlFor="member-card-search">
-                  ค้นหาบัตรสมาชิก
+                  ยืนยันบัตรสมาชิก
                 </label>
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <div className="relative">
+                <div className="grid min-w-0 gap-2 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                  <div className="relative min-w-0">
                     <Input
                       id="member-card-search"
                       label=""
-                      value={keyword}
-                      onChange={(event) => setKeyword(event.target.value)}
-                      placeholder="รหัสสมาชิก, เลขที่, ชื่อ หรือเบอร์โทร"
-                      className="min-h-12 rounded-xl bg-white pl-10 pr-10 text-base"
+                      value={identifier}
+                      onChange={(event) => setIdentifier(event.target.value)}
+                      placeholder="รหัสสมาชิกหรือเลขที่"
+                      className="min-h-12 w-full min-w-0 rounded-xl bg-white pl-10 pr-10 text-base"
                       autoComplete="off"
                     />
                     <Search className="pointer-events-none absolute left-3 top-3.5 text-slate-400" size={18} />
-                    {keyword ? (
+                    {identifier ? (
                       <button
                         type="button"
                         className="absolute right-3 top-3.5 text-slate-400 transition hover:text-slate-700"
                         onClick={() => {
-                          setKeyword("");
+                          setIdentifier("");
                           setResult(null);
                           setSelectedPaymentMethodId("");
                         }}
-                        aria-label="ล้างคำค้นหา"
+                        aria-label="ล้างรหัสสมาชิกหรือเลขที่"
                       >
                         <X size={18} />
                       </button>
                     ) : null}
                   </div>
-                  <Button disabled={pending} className="min-h-12 gap-2 px-5">
+                  <div className="relative min-w-0">
+                    <Input
+                      label=""
+                      value={verifier}
+                      onChange={(event) => setVerifier(event.target.value)}
+                      placeholder="เบอร์ท้าย 4 หลัก"
+                      className="min-h-12 w-full min-w-0 rounded-xl bg-white pl-10 pr-10 text-base"
+                      autoComplete="off"
+                      inputMode="numeric"
+                    />
+                    <IdCard className="pointer-events-none absolute left-3 top-3.5 text-slate-400" size={18} />
+                    {verifier ? (
+                      <button
+                        type="button"
+                        className="absolute right-3 top-3.5 text-slate-400 transition hover:text-slate-700"
+                        onClick={() => {
+                          setVerifier("");
+                          setResult(null);
+                          setSelectedPaymentMethodId("");
+                        }}
+                        aria-label="ล้างข้อมูลยืนยัน"
+                      >
+                        <X size={18} />
+                      </button>
+                    ) : null}
+                  </div>
+                  <Button disabled={pending} className="min-h-12 w-full justify-center gap-2 px-5 md:col-span-2 xl:col-span-1 xl:w-auto">
                     <Search size={18} />
-                    {pending ? "กำลังค้นหา..." : "ค้นหา"}
+                    {pending ? "กำลังตรวจสอบ..." : "ตรวจสอบ"}
                   </Button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {["รหัสสมาชิก", "เลขที่", "ชื่อ-สกุล", "เบอร์โทร"].map((item) => (
+                  {["กรอกรหัสสมาชิก", "กรอกเบอร์ 4 หลักท้าย", "ค้นหา"].map((item) => (
                     <span key={item} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-700">
                       {item}
                     </span>
@@ -209,8 +245,8 @@ export function PublicMemberCard({ token, workspace }: PublicMemberCardProps) {
               <CreditCard size={28} />
             </div>
             <div>
-              <h2 className="text-xl font-black text-slate-950">ค้นหาสมาชิกเพื่อแสดง QR Code</h2>
-              <p className="mt-1 text-sm text-slate-500">กรอกรหัสสมาชิก เลขที่ ชื่อ หรือเบอร์โทร ระบบจะแสดง QR จ่ายเงินเป็นส่วนแรกทันที</p>
+              <h2 className="text-xl font-black text-slate-950">ยืนยันสมาชิกเพื่อแสดง QR Code</h2>
+              <p className="mt-1 text-sm text-slate-500">กรอกรหัสสมาชิกหรือเลขที่ พร้อมเบอร์โทร 4 หลักท้าย หรือข้อมูลสำรองที่โรงเรียนให้ไว้ เพื่อดูยอดค้าง ประวัติ และ QR จ่ายเงิน</p>
             </div>
           </section>
         )}
@@ -238,8 +274,8 @@ function PaymentQrPanel({
     <aside className="order-first rounded-2xl border border-white/80 bg-white/95 p-4 shadow-sm backdrop-blur lg:sticky lg:top-4">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="grid size-10 place-items-center rounded-xl bg-blue-600 text-white">
-            <CreditCard size={20} />
+          <div className="grid size-10 place-items-center rounded-xl bg-white shadow-sm ring-1 ring-blue-100">
+            <Image src="/images/school-saver-logo.webp" alt="SchoolSaver" width={32} height={32} className="size-8 rounded-lg object-contain" />
           </div>
           <div>
             <p className="text-xs font-bold text-blue-700">QR Code</p>
@@ -266,10 +302,15 @@ function PaymentQrPanel({
 
           <div className="mx-auto grid aspect-square w-full max-w-72 place-items-center rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
             {preferredMethod.qrImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preferredMethod.qrImageUrl} alt="Payment QR" className="max-h-full max-w-full object-contain" />
+              <div className="relative grid size-full place-items-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={preferredMethod.qrImageUrl} alt="Payment QR" className="max-h-full max-w-full object-contain" />
+                <span className="pointer-events-none absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-2xl bg-white p-1.5 shadow-md ring-1 ring-slate-100">
+                  <Image src="/images/school-saver-logo.webp" alt="SchoolSaver" width={44} height={44} className="size-11 rounded-xl object-contain" />
+                </span>
+              </div>
             ) : (
-              <ReactQRCode value={qrValue} size={244} level="H" marginSize={2} />
+              <ReactQRCode value={qrValue} size={244} level="H" marginSize={2} imageSettings={qrLogoSettings} />
             )}
           </div>
 
@@ -295,8 +336,15 @@ function PaymentQrPanel({
 
 function MemberIdentity({ result }: { result: any }) {
   return (
-    <div className="rounded-2xl bg-slate-950 p-5 text-white shadow-sm">
-      <div className="flex items-start gap-3">
+    <div className="relative overflow-hidden rounded-2xl bg-slate-950 p-5 text-white shadow-sm">
+      <Image
+        src="/images/school-saver-logo.webp"
+        alt="SchoolSaver"
+        width={96}
+        height={96}
+        className="pointer-events-none absolute right-4 top-4 size-20 rounded-3xl object-contain opacity-15"
+      />
+      <div className="relative flex items-start gap-3">
         <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-white text-slate-950">
           <IdCard size={24} />
         </div>
@@ -305,7 +353,7 @@ function MemberIdentity({ result }: { result: any }) {
           <h2 className="mt-1 break-words text-3xl font-black">{result.member.fullName}</h2>
         </div>
       </div>
-      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+      <div className="relative mt-4 grid gap-2 text-sm sm:grid-cols-3">
         <Info label="รหัสสมาชิก" value={result.member.memberCode} />
         <Info label="เลขที่" value={result.member.studentNo ?? "-"} />
         <Info label="ห้อง" value={result.member.classroom ?? "-"} />

@@ -309,6 +309,7 @@ export async function getRoundDetailAction(roundId: string) {
                 amount: true,
                 paidAt: true,
                 note: true,
+                paymentMethod: { select: { id: true, name: true, type: true } },
               },
               orderBy: { paidAt: "asc" },
             },
@@ -602,6 +603,44 @@ export async function cancelRoundAction(roundId: string) {
     return successResult(updated, "ยกเลิกรอบสำเร็จ");
   } catch {
     return errorResult("ไม่สามารถยกเลิกรอบได้");
+  }
+}
+
+export async function deleteCollectionRoundAction(roundId: string) {
+  try {
+    const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ADMIN);
+    const round = await prisma.collectionRound.findFirst({
+      where: { id: roundId, workspaceId },
+      select: {
+        id: true,
+        title: true,
+        _count: { select: { memberRounds: true, paymentTransactions: true } },
+      },
+    });
+    if (!round) return errorResult("ไม่พบรอบใน workspace นี้");
+
+    await prisma.$transaction(async (tx) => {
+      await tx.paymentTransaction.deleteMany({ where: { workspaceId, roundId } });
+      await tx.memberRound.deleteMany({ where: { workspaceId, roundId } });
+      await tx.collectionRound.delete({ where: { id: roundId } });
+      await writeActivityLog(tx, {
+        workspaceId,
+        userId,
+        action: "DELETE_ROUND",
+        detail: `ลบรอบ ${round.title} พร้อมสมาชิกในรอบ ${round._count.memberRounds} รายการ และรายการชำระ ${round._count.paymentTransactions} รายการ`,
+      });
+    });
+
+    revalidatePath("/dashboard");
+    revalidatePath("/rounds");
+    revalidatePath(`/rounds/${roundId}`);
+    revalidatePath("/payments");
+    revalidatePath("/payments/history");
+    revalidatePath("/overdue");
+    revalidatePath("/reports");
+    return successResult({ deletedRoundId: roundId }, "ลบรอบแล้ว");
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถลบรอบได้");
   }
 }
 

@@ -3,8 +3,8 @@
 import { FileSpreadsheet } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/Button";
+import { paymentMethodTypeLabels } from "@/constants/payment-methods";
 import { formatInputDate, formatThaiDate, toDateKey } from "@/lib/date";
-import { calculateFine } from "@/lib/fine";
 
 type RoundDepositExportButtonProps = {
   round: {
@@ -34,6 +34,11 @@ type RoundDepositExportButtonProps = {
       amount: number;
       paidAt: Date | string;
       note: string | null;
+      paymentMethod?: {
+        id: string;
+        name: string;
+        type: keyof typeof paymentMethodTypeLabels;
+      } | null;
     }>;
   }>;
 };
@@ -43,24 +48,27 @@ export function RoundDepositExportButton({ round, dayList, memberRounds }: Round
     const dateKeys = dayList.map((day) => toDateKey(day));
     const dateLabels = dayList.map((day) => formatThaiDate(day));
     const rows = memberRounds.map((memberRound) => {
-      const dailyPayments = new Map<string, string[]>();
+      const dailyPayments = new Map<string, { amount: number; methods: string[] }>();
 
       for (const transaction of memberRound.transactions ?? []) {
         const key = toDateKey(transaction.paidAt);
-        const items = dailyPayments.get(key) ?? [];
-        const fineAtPayment = calculateFineAtPayment(round, transaction.paidAt);
-        items.push(`${transaction.amount}${fineAtPayment > 0 ? ` (ค่าปรับ ${fineAtPayment})` : ""}`);
-        dailyPayments.set(key, items);
+        const item = dailyPayments.get(key) ?? { amount: 0, methods: [] };
+        item.amount += transaction.amount;
+        const method = formatPaymentMethod(transaction.paymentMethod);
+        if (method && !item.methods.includes(method)) item.methods.push(method);
+        dailyPayments.set(key, item);
       }
 
       const row: Record<string, string | number> = {
-        "เลขที่": memberRound.member.studentNo ?? "",
-        "รหัสสมาชิก": memberRound.member.memberCode,
-        "ชื่อ": memberRound.member.fullName,
+        เลขที่: memberRound.member.studentNo ?? "",
+        รหัสสมาชิก: memberRound.member.memberCode,
+        ชื่อ: memberRound.member.fullName,
       };
 
       for (const [index, key] of dateKeys.entries()) {
-        row[dateLabels[index]] = dailyPayments.get(key)?.join("\n") ?? "";
+        const payment = dailyPayments.get(key);
+        row[dateLabels[index]] = payment?.amount ?? "";
+        row[`วิธีชำระ ${dateLabels[index]}`] = payment?.methods.join("\n") ?? "";
       }
 
       row["รวมจ่าย"] = memberRound.paidAmount;
@@ -75,7 +83,7 @@ export function RoundDepositExportButton({ round, dayList, memberRounds }: Round
       { wch: 10 },
       { wch: 16 },
       { wch: 28 },
-      ...dateLabels.map(() => ({ wch: 18 })),
+      ...dateLabels.flatMap(() => [{ wch: 14 }, { wch: 22 }]),
       { wch: 12 },
       { wch: 12 },
       { wch: 16 },
@@ -95,15 +103,10 @@ export function RoundDepositExportButton({ round, dayList, memberRounds }: Round
   );
 }
 
-function calculateFineAtPayment(round: RoundDepositExportButtonProps["round"], paidAt: Date | string) {
-  return calculateFine({
-    dueDate: new Date(round.dueDate),
-    payDate: new Date(paidAt),
-    fineEnabled: round.fineEnabled,
-    fineType: round.fineType,
-    fineAmount: round.fineAmount,
-    fineMaxAmount: round.fineMaxAmount,
-  });
+function formatPaymentMethod(method: { name: string; type: keyof typeof paymentMethodTypeLabels } | null | undefined) {
+  if (!method) return "";
+  const typeLabel = paymentMethodTypeLabels[method.type];
+  return typeLabel && typeLabel !== method.name ? `${method.name} (${typeLabel})` : method.name;
 }
 
 function sanitizeFilename(value: string) {

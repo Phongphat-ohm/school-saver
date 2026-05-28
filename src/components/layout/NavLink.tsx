@@ -10,6 +10,7 @@ type NavLinkProps = Omit<ComponentProps<typeof Link>, "href" | "children"> & {
   href: string;
   children: ReactNode;
   activeClassName?: string;
+  exact?: boolean;
   pendingClassName?: string;
   showPendingIndicator?: boolean;
 };
@@ -33,13 +34,14 @@ export function NavLink({
   children,
   className,
   activeClassName,
+  exact = false,
   pendingClassName,
   showPendingIndicator = true,
   prefetch = true,
   ...props
 }: NavLinkProps) {
   const pathname = usePathname();
-  const isActive = pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+  const isActive = pathname === href || (!exact && href !== "/" && pathname.startsWith(`${href}/`));
 
   return (
     <Link
