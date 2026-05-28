@@ -10,6 +10,7 @@ import { z } from "zod";
 import { hashPassword } from "@/lib/password";
 import { clearSupportSessionId, getSupportSessionId, setCurrentWorkspace, setSupportSessionId } from "@/lib/session";
 import { processDueScheduledAnnouncements } from "@/lib/scheduled-announcements";
+import { compareAppVersions, getCurrentAppVersion, parseAppVersion } from "@/lib/app-version";
 
 const workspaceStatusSchema = z.object({
   workspaceId: z.string().min(1),
@@ -100,6 +101,17 @@ const endSupportSessionSchema = z.object({
 const platformSettingSchema = z.object({
   key: z.string().min(1),
   value: z.string().trim().min(1).max(500),
+});
+
+const appVersionSchema = z.object({
+  version: z.string().trim().min(5).max(20),
+  title: z.string().trim().min(3).max(120),
+  features: z.string().trim().min(3).max(2000),
+  plannedAt: z.string().trim().optional(),
+});
+
+const appVersionIdSchema = z.object({
+  id: z.string().min(1),
 });
 
 const DEFAULT_PLATFORM_SETTINGS = [
@@ -1265,8 +1277,225 @@ export async function getAdminPlatformSettingsAction() {
       }),
     ),
   );
-  const settings = await prisma.platformSetting.findMany({ orderBy: { key: "asc" } });
-  return successResult({ settings: settings.map((setting) => ({ ...setting, label: setting.label ?? setting.key })), defaults: DEFAULT_PLATFORM_SETTINGS });
+  const [settings, currentVersion, versions] = await Promise.all([
+    prisma.platformSetting.findMany({ orderBy: { key: "asc" } }),
+    getCurrentAppVersion(),
+    prisma.appVersion.findMany({
+      include: { createdBy: { select: { fullName: true, username: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+  ]);
+  return successResult({
+    settings: settings.map((setting) => ({ ...setting, label: setting.label ?? setting.key })),
+    defaults: DEFAULT_PLATFORM_SETTINGS,
+    currentVersion,
+    versions,
+  });
+}
+
+async function createAppVersionReleaseActionLegacy(data: unknown) {
+  try {
+    const actor = await requireSuperAdmin();
+    const parsed = appVersionSchema.safeParse(data);
+    if (!parsed.success) return errorResult("ข้อมูลเวอร์ชันไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+
+    const nextVersion = parsed.data.version.replace(/^v/i, "");
+    if (!parseAppVersion(nextVersion)) return errorResult("กรุณาใช้รูปแบบเวอร์ชันแบบ 1.2.3");
+
+    const currentVersion = await getCurrentAppVersion();
+    if (compareAppVersions(nextVersion, currentVersion.version) <= 0) {
+      return errorResult(`ไม่สามารถ downgrade หรือใช้เวอร์ชันเดิมได้ เวอร์ชันปัจจุบันคือ ${currentVersion.version}`);
+    }
+
+    const duplicate = await prisma.appVersion.findUnique({ where: { version: nextVersion }, select: { id: true } });
+    if (duplicate) return errorResult(`เวอร์ชัน ${nextVersion} ถูกประกาศแล้ว`);
+
+    const activeUsers = await prisma.user.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true },
+    });
+    const notificationMessage = `เวอร์ชันใหม่ ${nextVersion}: ${parsed.data.title}\n\n${parsed.data.features}`;
+
+    const release = await prisma.$transaction(async (tx) => {
+      const created = await tx.appVersion.create({
+        data: {
+          version: nextVersion,
+          title: parsed.data.title,
+          features: parsed.data.features,
+          createdById: actor.id,
+        },
+        include: { createdBy: { select: { fullName: true, username: true } } },
+      });
+
+      if (activeUsers.length) {
+        await tx.notification.createMany({
+          data: activeUsers.map((user) => ({
+            userId: user.id,
+            type: "SYSTEM" as const,
+            title: `SchoolSaver v${nextVersion}`,
+            message: notificationMessage,
+            linkUrl: "/dashboard",
+          })),
+        });
+      }
+
+      await tx.activityLog.create({
+        data: {
+          userId: actor.id,
+          action: "SUPER_ADMIN_CREATE_APP_VERSION",
+          detail: `Published SchoolSaver v${nextVersion}: ${parsed.data.title}`,
+        },
+      });
+      return created;
+    });
+
+    revalidatePath("/");
+    revalidatePath("/admin/settings");
+    revalidatePath("/admin/version-control");
+    revalidatePath("/admin/announcements");
+    return successResult(release, `ประกาศ SchoolSaver v${nextVersion} แล้ว`);
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถประกาศเวอร์ชันใหม่ได้");
+  }
+}
+
+export async function createAppVersionReleaseAction(data: unknown) {
+  try {
+    const actor = await requireSuperAdmin();
+    const parsed = appVersionSchema.safeParse(data);
+    if (!parsed.success) return errorResult("ข้อมูลเวอร์ชันไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+
+    const nextVersion = parsed.data.version.replace(/^v/i, "");
+    if (!parseAppVersion(nextVersion)) return errorResult("กรุณาใช้รูปแบบเวอร์ชันแบบ 1.2.3");
+    const plannedAt = parsed.data.plannedAt ? new Date(parsed.data.plannedAt) : null;
+    if (plannedAt && Number.isNaN(plannedAt.getTime())) return errorResult("เวลาที่จะปล่อยเวอร์ชันไม่ถูกต้อง");
+
+    const currentVersion = await getCurrentAppVersion();
+    if (compareAppVersions(nextVersion, currentVersion.version) <= 0) {
+      return errorResult(`ไม่สามารถวางแผน downgrade หรือใช้เวอร์ชันเดิมได้ เวอร์ชันที่ใช้งานอยู่คือ ${currentVersion.version}`);
+    }
+
+    const duplicate = await prisma.appVersion.findUnique({ where: { version: nextVersion }, select: { id: true } });
+    if (duplicate) return errorResult(`เวอร์ชัน ${nextVersion} ถูกประกาศแล้ว`);
+
+    const activeUsers = await prisma.user.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true },
+    });
+    const releaseTimeText = plannedAt ? `\nกำหนดปล่อย: ${plannedAt.toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}` : "";
+    const notificationMessage = `ประกาศล่วงหน้า: SchoolSaver จะมีเวอร์ชันใหม่ v${nextVersion}${releaseTimeText}\n\n${parsed.data.title}\n\n${parsed.data.features}`;
+
+    const release = await prisma.$transaction(async (tx) => {
+      const created = await tx.appVersion.create({
+        data: {
+          version: nextVersion,
+          title: parsed.data.title,
+          features: parsed.data.features,
+          status: "PLANNED",
+          isPublished: false,
+          plannedAt,
+          createdById: actor.id,
+        },
+        include: { createdBy: { select: { fullName: true, username: true } } },
+      });
+
+      if (activeUsers.length) {
+        await tx.notification.createMany({
+          data: activeUsers.map((user) => ({
+            userId: user.id,
+            type: "SYSTEM" as const,
+            title: `ประกาศล่วงหน้า SchoolSaver v${nextVersion}`,
+            message: notificationMessage,
+            linkUrl: "/dashboard",
+          })),
+        });
+      }
+
+      await tx.activityLog.create({
+        data: {
+          userId: actor.id,
+          action: "SUPER_ADMIN_PLAN_APP_VERSION",
+          detail: `Planned SchoolSaver v${nextVersion}: ${parsed.data.title}`,
+        },
+      });
+      return created;
+    });
+
+    revalidatePath("/");
+    revalidatePath("/admin/settings");
+    revalidatePath("/admin/version-control");
+    revalidatePath("/admin/announcements");
+    return successResult(release, `ประกาศล่วงหน้า SchoolSaver v${nextVersion} แล้ว สถานะยังไม่ใช้งาน`);
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถประกาศเวอร์ชันใหม่ได้");
+  }
+}
+
+export async function activateAppVersionAction(data: unknown) {
+  try {
+    const actor = await requireSuperAdmin();
+    const parsed = appVersionIdSchema.safeParse(data);
+    if (!parsed.success) return errorResult("ข้อมูลเวอร์ชันไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+
+    const target = await prisma.appVersion.findUnique({
+      where: { id: parsed.data.id },
+      select: { id: true, version: true, title: true, status: true },
+    });
+    if (!target) return errorResult("ไม่พบเวอร์ชันที่ต้องการเปิดใช้งาน");
+    if (target.status === "ACTIVE") return errorResult(`v${target.version} เป็นเวอร์ชันที่ใช้งานอยู่แล้ว`);
+
+    const currentVersion = await getCurrentAppVersion();
+    if (compareAppVersions(target.version, currentVersion.version) <= 0) {
+      return errorResult(`ไม่สามารถตั้งเวอร์ชันที่ต่ำกว่าหรือเท่ากับเวอร์ชันปัจจุบันได้ เวอร์ชันที่ใช้งานอยู่คือ ${currentVersion.version}`);
+    }
+
+    const activatedAt = new Date();
+    const activeUsers = await prisma.user.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true },
+    });
+
+    const release = await prisma.$transaction(async (tx) => {
+      await tx.appVersion.updateMany({
+        where: { status: "ACTIVE" },
+        data: { status: "ARCHIVED", isPublished: false },
+      });
+      const updated = await tx.appVersion.update({
+        where: { id: target.id },
+        data: { status: "ACTIVE", isPublished: true, activatedAt },
+        include: { createdBy: { select: { fullName: true, username: true } } },
+      });
+
+      if (activeUsers.length) {
+        await tx.notification.createMany({
+          data: activeUsers.map((user) => ({
+            userId: user.id,
+            type: "SYSTEM" as const,
+            title: `SchoolSaver v${target.version} พร้อมใช้งานแล้ว`,
+            message: `SchoolSaver v${target.version} ถูกตั้งเป็นเวอร์ชันใช้งานแล้ว\n\n${target.title}`,
+            linkUrl: "/dashboard",
+          })),
+        });
+      }
+
+      await tx.activityLog.create({
+        data: {
+          userId: actor.id,
+          action: "SUPER_ADMIN_ACTIVATE_APP_VERSION",
+          detail: `Activated SchoolSaver v${target.version}: ${target.title}`,
+        },
+      });
+      return updated;
+    });
+
+    revalidatePath("/");
+    revalidatePath("/admin/version-control");
+    revalidatePath("/admin/announcements");
+    return successResult(release, `ตั้ง SchoolSaver v${target.version} เป็นเวอร์ชันใช้งานแล้ว`);
+  } catch (error) {
+    return errorResult(error instanceof Error ? error.message : "ไม่สามารถเปิดใช้งานเวอร์ชันนี้ได้");
+  }
 }
 
 export async function getAdminReportsAction() {

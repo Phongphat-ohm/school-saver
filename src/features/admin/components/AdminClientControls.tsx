@@ -2,16 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { Download, Edit3, KeyRound, Maximize2, Power, Search, Send, ShieldCheck, UserCheck, X } from "lucide-react";
+import { CheckCircle2, Download, Edit3, KeyRound, Maximize2, Power, Search, Send, ShieldCheck, UserCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { MarkdownEditor } from "@/components/ui/MarkdownEditor";
 import { Modal } from "@/components/ui/Modal";
 import { renderSafeMarkdown } from "@/lib/markdown";
 import {
   enterSupportSessionAction,
+  activateAppVersionAction,
   endSupportSessionAction,
   exitSupportSessionAction,
   cancelScheduledAnnouncementAction,
+  createAppVersionReleaseAction,
   createAnnouncementTemplateAction,
   createRecipientGroupAction,
   createAdminDataExportAction,
@@ -629,6 +631,172 @@ export function PlatformSettingForm({ setting }: { setting: { key: string; value
       <Button disabled={pending || !changed || value.trim().length === 0} type="button" onClick={save}>บันทึก</Button>
     </div>
   );
+}
+
+export function AppVersionReleaseForm({ currentVersion }: { currentVersion: { version: string } }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [version, setVersion] = useState("");
+  const [title, setTitle] = useState("");
+  const [features, setFeatures] = useState("");
+  const [plannedAt, setPlannedAt] = useState("");
+
+  function submit() {
+    startTransition(async () => {
+      const confirmed = await showConfirm("ประกาศเวอร์ชันใหม่ล่วงหน้า?", `เวอร์ชันปัจจุบันคือ ${currentVersion.version} รายการนี้จะยังไม่ถูกใช้งานจนกว่าแอดมินจะกดเปิดใช้งาน`);
+      if (!confirmed) return;
+      const result = await createAppVersionReleaseAction({ version, title, features, plannedAt: plannedAt || undefined });
+      if (!result.success) {
+        await showError(result.message);
+        return;
+      }
+      await showSuccess(result.message ?? "ประกาศเวอร์ชันล่วงหน้าแล้ว");
+      setVersion("");
+      setTitle("");
+      setFeatures("");
+      setPlannedAt("");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-black text-slate-950">ประกาศเวอร์ชันใหม่ล่วงหน้า</h2>
+          <p className="mt-1 text-sm text-slate-500">สร้าง release plan เป็นสถานะยังไม่ใช้งานก่อน แล้วค่อยกดเปิดใช้งานหลัง update เสร็จ</p>
+        </div>
+        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">Current v{currentVersion.version}</span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
+        <input className="min-h-11 rounded-2xl border border-slate-200 px-4 text-sm" placeholder="เช่น 1.2.3" value={version} onChange={(event) => setVersion(event.target.value)} />
+        <input className="min-h-11 rounded-2xl border border-slate-200 px-4 text-sm" placeholder="หัวข้อ release" value={title} onChange={(event) => setTitle(event.target.value)} />
+      </div>
+      <input className="min-h-11 rounded-2xl border border-slate-200 px-4 text-sm" type="datetime-local" value={plannedAt} onChange={(event) => setPlannedAt(event.target.value)} />
+      <MarkdownEditor
+        label="ฟีเจอร์/สิ่งที่จะเปลี่ยนในเวอร์ชันนี้"
+        minHeightClassName="min-h-48"
+        placeholder="- เพิ่ม...\n- ปรับปรุง...\n- แก้ไข..."
+        value={features}
+        onChange={setFeatures}
+      />
+      <Button disabled={pending || version.trim().length < 5 || title.trim().length < 3 || features.trim().length < 3} type="button" onClick={submit}>
+        <Send className="mr-2" size={16} />
+        ประกาศล่วงหน้า
+      </Button>
+    </div>
+  );
+}
+
+export function AppVersionList({
+  versions,
+  currentVersion,
+}: {
+  versions: Array<{
+    id: string;
+    version: string;
+    title: string;
+    features: string;
+    status: "PLANNED" | "ACTIVE" | "ARCHIVED";
+    createdAt: string;
+    plannedAt?: string | null;
+    activatedAt?: string | null;
+    createdByName: string;
+  }>;
+  currentVersion: string;
+}) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  const [pendingVersionId, setPendingVersionId] = useState<string | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const selectedVersion = versions.find((version) => version.id === selectedVersionId);
+  const selectedVersionFeaturesHtml = selectedVersion ? renderSafeMarkdown(selectedVersion.features) : "";
+
+  function activate(version: (typeof versions)[number]) {
+    startTransition(async () => {
+      const confirmed = await showConfirm("ตั้งเป็นเวอร์ชันใช้งาน?", `ยืนยันว่า deploy/update v${version.version} เสร็จแล้ว และต้องการให้ footer แสดง v${version.version} เป็นเวอร์ชันปัจจุบัน`);
+      if (!confirmed) return;
+      setPendingVersionId(version.id);
+      const result = await activateAppVersionAction({ id: version.id });
+      setPendingVersionId(null);
+      if (!result.success) {
+        await showError(result.message);
+        return;
+      }
+      await showSuccess(result.message ?? "เปิดใช้งานเวอร์ชันแล้ว");
+      router.refresh();
+    });
+  }
+
+  return (
+    <>
+      <div className="grid max-h-[42rem] gap-2 overflow-y-auto pr-1">
+        {versions.map((version) => (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3" key={version.id}>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-base font-black text-slate-950">v{version.version}</p>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${getVersionStatusClass(version.status)}`}>{getVersionStatusLabel(version.status)}</span>
+              </div>
+              <p className="mt-1 truncate text-sm font-bold text-slate-600">{version.title}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {version.status === "PLANNED" ? (
+                <Button className="min-h-9 rounded-xl px-3 py-1 text-xs" disabled={pendingVersionId === version.id} type="button" onClick={() => activate(version)}>
+                  <CheckCircle2 className="mr-1" size={14} />
+                  ใช้งานแล้ว
+                </Button>
+              ) : null}
+              <Button className="min-h-9 rounded-xl px-3 py-1 text-xs" type="button" variant="secondary" onClick={() => setSelectedVersionId(version.id)}>
+                ดูรายละเอียด
+              </Button>
+            </div>
+          </div>
+        ))}
+        {!versions.length ? <p className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-semibold text-slate-400">ยังไม่มีการประกาศเวอร์ชันใหม่</p> : null}
+      </div>
+
+      <Modal title={selectedVersion ? `v${selectedVersion.version} - ${selectedVersion.title}` : "รายละเอียดเวอร์ชัน"} open={!!selectedVersion} onClose={() => setSelectedVersionId(null)} size="lg">
+        {selectedVersion ? (
+          <div className="grid gap-4">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">Release</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">v{selectedVersion.version}</p>
+              <p className="mt-1 font-bold text-slate-700">{selectedVersion.title}</p>
+              <p className="mt-2 text-xs text-slate-500">
+                {selectedVersion.createdAt} · {selectedVersion.createdByName}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-500">
+                <span className={`rounded-full px-2.5 py-1 ${getVersionStatusClass(selectedVersion.status)}`}>{getVersionStatusLabel(selectedVersion.status)}</span>
+                {selectedVersion.plannedAt ? <span className="rounded-full bg-slate-100 px-2.5 py-1">กำหนดปล่อย {selectedVersion.plannedAt}</span> : null}
+                {selectedVersion.activatedAt ? <span className="rounded-full bg-slate-100 px-2.5 py-1">ใช้งานเมื่อ {selectedVersion.activatedAt}</span> : null}
+                {selectedVersion.version === currentVersion ? <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-700">Current</span> : null}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-black text-slate-950">ฟีเจอร์และรายละเอียด</p>
+              <div
+                className="markdown-body max-h-[55vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-7 text-slate-600"
+                dangerouslySetInnerHTML={{ __html: selectedVersionFeaturesHtml || "<p>-</p>" }}
+              />
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+    </>
+  );
+}
+
+function getVersionStatusLabel(status: "PLANNED" | "ACTIVE" | "ARCHIVED") {
+  if (status === "ACTIVE") return "ใช้งานอยู่";
+  if (status === "ARCHIVED") return "เก็บประวัติ";
+  return "ยังไม่ใช้งาน";
+}
+
+function getVersionStatusClass(status: "PLANNED" | "ACTIVE" | "ARCHIVED") {
+  if (status === "ACTIVE") return "bg-emerald-50 text-emerald-700";
+  if (status === "ARCHIVED") return "bg-slate-100 text-slate-600";
+  return "bg-amber-50 text-amber-700";
 }
 
 type PlatformSettingControl =

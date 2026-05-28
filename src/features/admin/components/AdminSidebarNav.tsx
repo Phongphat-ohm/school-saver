@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, BellRing, BriefcaseBusiness, DatabaseBackup, FileSpreadsheet, Flag, HeartPulse, LifeBuoy, ReceiptText, Settings, ShieldAlert, ShieldCheck, UsersRound, WalletCards } from "lucide-react";
+import { Activity, BellRing, BriefcaseBusiness, DatabaseBackup, FileSpreadsheet, Flag, GitBranch, HeartPulse, LifeBuoy, ReceiptText, Settings, ShieldAlert, ShieldCheck, UsersRound, WalletCards } from "lucide-react";
 
 const adminNavGroups = [
   {
@@ -30,6 +30,7 @@ const adminNavGroups = [
     title: "เครื่องมือกลาง",
     items: [
       { href: "/admin/announcements", label: "ประกาศ", icon: BellRing },
+      { href: "/admin/version-control", label: "Version Control", icon: GitBranch },
       { href: "/admin/exports", label: "ส่งออกข้อมูล", icon: DatabaseBackup },
       { href: "/admin/platform", label: "ลิมิต / ฟีเจอร์", icon: Flag },
       { href: "/admin/billing", label: "การใช้งานระบบ", icon: ReceiptText },

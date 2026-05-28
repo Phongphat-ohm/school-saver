@@ -117,6 +117,12 @@ enum AppSessionKind {
   RESTORE
 }
 
+enum AppVersionStatus {
+  PLANNED
+  ACTIVE
+  ARCHIVED
+}
+
 model User {
   id                    String               @id @default(cuid())
   username              String               @unique
@@ -147,6 +153,7 @@ model User {
   announcementTemplates AnnouncementTemplate[] @relation("AnnouncementTemplateCreator")
   recipientGroups       RecipientGroup[] @relation("RecipientGroupCreator")
   scheduledAnnouncements ScheduledAnnouncement[] @relation("ScheduledAnnouncementCreator")
+  appVersions           AppVersion[] @relation("AppVersionCreator")
   recipientGroupMembers RecipientGroupMember[]
   emailVerificationOtps EmailVerificationOtp[]
   passwordResetTokens   PasswordResetToken[]
@@ -328,6 +335,25 @@ model PlatformSetting {
   createdAt DateTime @default(now())
 
   @@index([updatedAt])
+}
+
+model AppVersion {
+  id          String   @id @default(cuid())
+  version     String   @unique
+  title       String
+  features    String
+  status      AppVersionStatus @default(PLANNED)
+  isPublished Boolean  @default(false)
+  plannedAt   DateTime?
+  activatedAt DateTime?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   User     @relation("AppVersionCreator", fields: [createdById], references: [id])
+
+  @@index([status, activatedAt])
+  @@index([isPublished, createdAt])
+  @@index([createdById, createdAt])
 }
 
 model SuperAdminSupportSession {

@@ -2,8 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { BookOpenText, BriefcaseBusiness, ShieldCheck } from "lucide-react";
 import { routes } from "@/constants/routes";
+import { getCurrentAppVersion } from "@/lib/app-version";
 
-export function Footer() {
+export async function Footer() {
+  const currentVersion = await getCurrentAppVersion();
+
   return (
     <footer className="mt-8 rounded-[1.75rem] border border-white/70 bg-white/85 p-4 shadow-sm backdrop-blur sm:p-5">
       <div className="grid gap-5 md:grid-cols-[1fr_auto] md:items-center">
@@ -37,7 +40,10 @@ export function Footer() {
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4 text-xs font-medium text-slate-400">
         <p>© {new Date().getFullYear()} SchoolSaver</p>
-        <p>เก็บเงินห้องง่ายขึ้น ตรวจสอบได้ทุกยอด</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 font-black text-slate-500">v{currentVersion.version}</span>
+          <p>เก็บเงินห้องง่ายขึ้น ตรวจสอบได้ทุกยอด</p>
+        </div>
       </div>
     </footer>
   );
