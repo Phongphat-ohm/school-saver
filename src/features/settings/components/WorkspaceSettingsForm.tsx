@@ -6,13 +6,15 @@ import { Building2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { deleteCurrentWorkspaceAction, updateCurrentWorkspaceAction } from "@/features/workspace/actions";
-import { closeLoading, showConfirm, showError, showLoading, showSuccess, showTextInputConfirm } from "@/lib/swal";
+import { closeLoading, showConfirm, showError, showLoading, showSuccess } from "@/lib/swal";
 
 export function WorkspaceSettingsForm({ workspace }: { workspace: { name: string; description: string | null; role?: string } }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState({ name: workspace.name, description: workspace.description ?? "" });
+  const [deleteForm, setDeleteForm] = useState({ confirmName: "", password: "" });
   const canDeleteWorkspace = workspace.role === "OWNER";
+  const canSubmitDelete = deleteForm.confirmName === workspace.name && deleteForm.password.length > 0;
 
   return (
     <div className="grid gap-4">
@@ -42,36 +44,42 @@ export function WorkspaceSettingsForm({ workspace }: { workspace: { name: string
       </form>
 
       {canDeleteWorkspace ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h4 className="font-bold text-rose-950">ลบ workspace นี้</h4>
-              <p className="mt-1 text-sm leading-6 text-rose-700">การลบจะลบสมาชิก รอบเก็บเงิน รายการชำระ วิธีชำระ และคำเชิญทั้งหมดของ workspace นี้</p>
-            </div>
+        <div className="grid gap-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+          <div>
+            <h4 className="font-bold text-rose-950">ลบ workspace นี้</h4>
+            <p className="mt-1 text-sm leading-6 text-rose-700">
+              ลบได้เฉพาะเจ้าของ workspace เท่านั้น ต้องพิมพ์ชื่อ workspace ให้ตรงและกรอกรหัสผ่านปัจจุบันก่อนยืนยัน การลบจะลบสมาชิก รอบเก็บเงิน รายการชำระ วิธีชำระ และคำเชิญทั้งหมดของ workspace นี้
+            </p>
+          </div>
+          <div className="grid gap-3">
+            <Input
+              label={`พิมพ์ชื่อ workspace เพื่อยืนยัน (${workspace.name})`}
+              value={deleteForm.confirmName}
+              onChange={(event) => setDeleteForm({ ...deleteForm, confirmName: event.target.value })}
+              autoComplete="off"
+            />
+            <Input
+              label="รหัสผ่านปัจจุบัน"
+              type="password"
+              value={deleteForm.password}
+              onChange={(event) => setDeleteForm({ ...deleteForm, password: event.target.value })}
+              autoComplete="current-password"
+            />
             <Button
               type="button"
               variant="danger"
-              className="gap-2"
-              disabled={pending}
+              className="w-full gap-2"
+              disabled={pending || !canSubmitDelete}
               onClick={() => {
                 startTransition(async () => {
-                  const typedName = await showTextInputConfirm({
-                    title: "ยืนยันการลบ workspace",
-                    text: `พิมพ์ชื่อ workspace "${workspace.name}" เพื่อยืนยันการลบ`,
-                    placeholder: workspace.name,
-                    confirmButtonText: "ยืนยันการลบ",
-                  });
-                  if (typedName === null) return;
-                  if (typedName !== workspace.name) {
-                    await showError("ชื่อ workspace ไม่ตรงกัน");
-                    return;
-                  }
-                  if (!(await showConfirm("ลบ workspace", "ยืนยันลบ workspace นี้แบบถาวรหรือไม่?"))) return;
+                  const confirmed = await showConfirm("ลบ workspace", `ยืนยันลบ workspace "${workspace.name}" แบบถาวรหรือไม่?`);
+                  if (!confirmed) return;
                   showLoading("กำลังลบ workspace");
-                  const result = await deleteCurrentWorkspaceAction();
+                  const result = await deleteCurrentWorkspaceAction(deleteForm);
                   closeLoading();
                   if (result.success) {
                     await showSuccess(result.message ?? "ลบ workspace แล้ว");
+                    setDeleteForm({ confirmName: "", password: "" });
                     router.push("/workspaces");
                     router.refresh();
                   } else {

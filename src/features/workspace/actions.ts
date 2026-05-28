@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { defaultPaymentMethods } from "@/constants/payment-methods";
 import { logActivity, writeActivityLog } from "@/lib/activity-log";
 import { getDefaultWorkspaceStatus } from "@/lib/platform-settings";
+import { verifyPassword } from "@/lib/password";
 import { OWNER_ADMIN, OWNER_ONLY, requireWorkspaceRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { errorResult, successResult } from "@/lib/result";
@@ -14,6 +15,7 @@ import { ensureWorkspaceUserLimit } from "@/lib/workspace-limits";
 import {
   inviteUserSchema,
   approveJoinRequestSchema,
+  deleteWorkspaceSchema,
   removeWorkspaceMemberSchema,
   requestJoinWorkspaceSchema,
   sendWorkspaceInvitationSchema,
@@ -125,10 +127,22 @@ export async function updateCurrentWorkspaceAction(data: unknown) {
   }
 }
 
-export async function deleteCurrentWorkspaceAction() {
+export async function deleteCurrentWorkspaceAction(data: unknown) {
   try {
     const { workspaceId, userId } = await requireWorkspaceRole(OWNER_ONLY);
-    const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true } });
+    const parsed = deleteWorkspaceSchema.safeParse(data);
+    if (!parsed.success) return errorResult("ข้อมูลยืนยันการลบ workspace ไม่ถูกต้อง", parsed.error.flatten().fieldErrors);
+
+    const [workspace, user] = await Promise.all([
+      prisma.workspace.findUnique({ where: { id: workspaceId }, select: { name: true, ownerId: true } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } }),
+    ]);
+    if (!workspace) return errorResult("ไม่พบ workspace ที่ต้องการลบ");
+    if (workspace.ownerId !== userId) return errorResult("ลบ workspace ได้เฉพาะเจ้าของ workspace เท่านั้น");
+    if (parsed.data.confirmName !== workspace.name) return errorResult("ชื่อ workspace ไม่ตรงกัน");
+    if (!user) return errorResult("ไม่พบผู้ใช้ปัจจุบัน");
+    const validPassword = await verifyPassword(parsed.data.password, user.passwordHash);
+    if (!validPassword) return errorResult("รหัสผ่านไม่ถูกต้อง");
 
     await prisma.$transaction(async (tx) => {
       await tx.paymentTransaction.deleteMany({ where: { workspaceId } });
