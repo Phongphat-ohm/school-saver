@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { showError, showLoading, showSuccess, closeLoading } from "@/lib/swal";
 import Link from "next/link";
 
-export function LoginForm() {
+export function LoginForm({ redirectTo = "/dashboard" }: { redirectTo?: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [username, setUsername] = useState("");
@@ -32,7 +32,7 @@ export function LoginForm() {
             return;
           }
           await showSuccess("เข้าสู่ระบบสำเร็จ");
-          router.push("/dashboard");
+          router.push(redirectTo);
           router.refresh();
         });
       }}

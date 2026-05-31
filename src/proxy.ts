@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getSafeRedirectPath } from "@/lib/redirect";
 
 function isSameHostApiRequest(request: NextRequest) {
   const requestHost = request.nextUrl.host;
@@ -55,11 +56,13 @@ export default function proxy(request: NextRequest) {
   }
 
   if (!hasSession && !isPublicPage) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("redirect", `${pathname}${request.nextUrl.search}`);
+    return NextResponse.redirect(loginUrl);
   }
 
   if (hasSession && (isAuthPage || isRestorePage)) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL(getSafeRedirectPath(request.nextUrl.searchParams.get("redirect")), request.url));
   }
 
   return NextResponse.next();

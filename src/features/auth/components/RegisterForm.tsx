@@ -11,7 +11,7 @@ import { PasswordStrengthMeter } from "@/components/shared/PasswordStrengthMeter
 import { registerAction, sendRegisteredEmailVerificationOtpAction, verifyRegisteredEmailOtpAction } from "@/features/auth/actions";
 import { closeLoading, showError, showLoading, showSuccess } from "@/lib/swal";
 
-export function RegisterForm() {
+export function RegisterForm({ redirectTo = "/workspaces" }: { redirectTo?: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export function RegisterForm() {
               closeLoading();
               if (result.success) {
                 await showSuccess(result.message ?? "ยืนยันอีเมลแล้ว");
-                router.push("/workspaces");
+                router.push(redirectTo);
                 router.refresh();
               } else await showError(result.message);
             });
@@ -116,7 +116,7 @@ export function RegisterForm() {
               setRetryAfterSeconds(result.data.emailVerificationRetryAfterSeconds);
               setCode("");
             } else {
-              router.push("/workspaces");
+              router.push(redirectTo);
               router.refresh();
             }
           } else await showError(result.message);
@@ -165,7 +165,7 @@ export function RegisterForm() {
         <UserPlus size={18} />สมัครสมาชิก
       </Button>
       <p className="text-center text-sm text-slate-500">
-        มีบัญชีแล้ว? <Link href="/login" className="font-bold text-blue-700">เข้าสู่ระบบ</Link>
+        มีบัญชีแล้ว? <Link href={`/login?redirect=${encodeURIComponent(redirectTo)}`} className="font-bold text-blue-700">เข้าสู่ระบบ</Link>
       </p>
     </form>
   );
