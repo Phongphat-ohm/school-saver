@@ -1,6 +1,6 @@
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getAdminFinanceAction } from "@/features/admin/actions";
-import { ExportXlsxButton } from "@/features/admin/components/AdminClientControls";
+import { ExportCsvButton } from "@/features/admin/components/AdminClientControls";
 import {
   AdminFilterDropdown,
   adminFilterButtonClass,
@@ -69,7 +69,7 @@ export default async function AdminFinancePage({ searchParams }: { searchParams:
         <Metric label="ยอดชำระตาม filter" value={formatMoney(result.data.totals.amount)} />
         <Metric label="จำนวนธุรกรรม" value={result.data.totals.count.toLocaleString("th-TH")} />
         <Metric label="ค้างชำระที่พบ" value={result.data.outstandingPagination.total.toLocaleString("th-TH")} />
-        <div className="rounded-2xl bg-white p-4 shadow-sm"><ExportXlsxButton filename="super-admin-transactions.xlsx" rows={exportRows} /></div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm"><ExportCsvButton filename="super-admin-transactions.csv" rows={exportRows} /></div>
       </section>
 
       <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">

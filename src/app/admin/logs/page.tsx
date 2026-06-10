@@ -1,6 +1,6 @@
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getAdminLogsAction } from "@/features/admin/actions";
-import { ExportXlsxButton } from "@/features/admin/components/AdminClientControls";
+import { ExportCsvButton } from "@/features/admin/components/AdminClientControls";
 import {
   AdminFilterDropdown,
   adminFilterButtonClass,
@@ -62,7 +62,7 @@ export default async function AdminLogsPage({ searchParams }: { searchParams: Pr
         </form>
       </AdminFilterDropdown>
 
-      <div className="flex justify-end"><ExportXlsxButton filename="super-admin-activity-logs.xlsx" rows={rows} /></div>
+      <div className="flex justify-end"><ExportCsvButton filename="super-admin-activity-logs.csv" rows={rows} /></div>
 
       <div className="max-w-full overflow-x-auto rounded-2xl bg-white shadow-sm">
         <table className="w-full min-w-[1040px] text-sm">

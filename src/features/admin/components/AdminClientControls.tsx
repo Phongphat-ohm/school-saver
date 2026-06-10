@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { MarkdownEditor } from "@/components/ui/MarkdownEditor";
 import { Modal } from "@/components/ui/Modal";
 import { renderSafeMarkdown } from "@/lib/markdown";
+import { downloadRowsAsCsv, toCsvFilename } from "@/lib/csv";
 import {
   enterSupportSessionAction,
   activateAppVersionAction,
@@ -883,20 +884,16 @@ function PlatformSettingInput({ config, value, onChange }: { config: PlatformSet
   return <input className="min-h-11 rounded-2xl border border-slate-200 px-4 text-sm" value={value} onChange={(event) => onChange(event.target.value)} />;
 }
 
-export function ExportXlsxButton({ filename, rows }: { filename: string; rows: Array<Record<string, unknown>> }) {
-  async function exportFile() {
+export function ExportCsvButton({ filename, rows }: { filename: string; rows: Array<Record<string, unknown>> }) {
+  function exportFile() {
     if (!rows.length) return;
-    const XLSX = await import("xlsx");
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Export");
-    XLSX.writeFile(workbook, filename);
+    downloadRowsAsCsv(toCsvFilename(filename), rows);
   }
 
   return (
     <Button disabled={!rows.length} type="button" variant="secondary" onClick={exportFile}>
       <Download className="mr-2" size={16} />
-      ส่งออก Excel
+      ส่งออก CSV
     </Button>
   );
 }
@@ -911,11 +908,7 @@ export function AdminDataExportButton({ dataset }: { dataset: "users" | "workspa
         await showError(result.message);
         return;
       }
-      const XLSX = await import("xlsx");
-      const worksheet = XLSX.utils.json_to_sheet(result.data.rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Export");
-      XLSX.writeFile(workbook, result.data.filename);
+      downloadRowsAsCsv(result.data.filename, result.data.rows);
       const cappedMessage = result.data.truncated
         ? `จำกัดข้อมูลล่าสุด ${result.data.exportedRows.toLocaleString("th-TH")} จากทั้งหมด ${result.data.totalRows.toLocaleString("th-TH")} แถว`
         : `ส่งออกครบ ${result.data.exportedRows.toLocaleString("th-TH")} แถว`;
@@ -926,7 +919,7 @@ export function AdminDataExportButton({ dataset }: { dataset: "users" | "workspa
   return (
     <Button disabled={pending} type="button" variant="secondary" onClick={exportFile}>
       <Download className="mr-2" size={16} />
-      {pending ? "กำลังส่งออก..." : "ส่งออก Excel"}
+      {pending ? "กำลังส่งออก..." : "ส่งออก CSV"}
     </Button>
   );
 }

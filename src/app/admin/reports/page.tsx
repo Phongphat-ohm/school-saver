@@ -1,6 +1,6 @@
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getAdminReportsAction } from "@/features/admin/actions";
-import { ExportXlsxButton } from "@/features/admin/components/AdminClientControls";
+import { ExportCsvButton } from "@/features/admin/components/AdminClientControls";
 import { formatMoney } from "@/lib/money";
 import { formatThaiDateTime } from "@/lib/date";
 
@@ -13,7 +13,7 @@ export default async function AdminReportsPage() {
 
   return (
     <div className="grid gap-5">
-      <Header title="รายงานและส่งออก" description="รายงานการใช้งาน การเติบโตของผู้ใช้ ยอดชำระ ยอดค้าง และกิจกรรม/ความปลอดภัย พร้อมส่งออก Excel" />
+      <Header title="รายงานและส่งออก" description="รายงานการใช้งาน การเติบโตของผู้ใช้ ยอดชำระ ยอดค้าง และกิจกรรม/ความปลอดภัย พร้อมส่งออก CSV" />
       <section className="grid gap-3 md:grid-cols-4">
         <Metric label="ยอดชำระรวม" value={formatMoney(result.data.paidTotals._sum.amount ?? 0)} />
         <Metric label="จำนวนธุรกรรม" value={result.data.paidTotals._count._all.toLocaleString("th-TH")} />
@@ -21,9 +21,9 @@ export default async function AdminReportsPage() {
         <Metric label="รายการค้าง" value={result.data.outstandingTotals._count._all.toLocaleString("th-TH")} />
       </section>
       <section className="grid gap-5 xl:grid-cols-3">
-        <ReportCard title="การใช้งานเวิร์กสเปซ" rows={workspaceRows} filename="workspace-usage.xlsx" />
-        <ReportCard title="การเติบโตของผู้ใช้" rows={userRows} filename="user-growth.xlsx" />
-        <ReportCard title="กิจกรรม / ความปลอดภัย" rows={logRows} filename="activity-security.xlsx" />
+        <ReportCard title="การใช้งานเวิร์กสเปซ" rows={workspaceRows} filename="workspace-usage.csv" />
+        <ReportCard title="การเติบโตของผู้ใช้" rows={userRows} filename="user-growth.csv" />
+        <ReportCard title="กิจกรรม / ความปลอดภัย" rows={logRows} filename="activity-security.csv" />
       </section>
     </div>
   );
@@ -35,5 +35,5 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl bg-white p-4 shadow-sm"><p className="text-sm font-semibold text-slate-500">{label}</p><p className="mt-2 text-xl font-black text-slate-950">{value}</p></div>;
 }
 function ReportCard({ title, rows, filename }: { title: string; rows: Array<Record<string, unknown>>; filename: string }) {
-  return <div className="rounded-2xl bg-white p-4 shadow-sm"><div className="mb-3 flex items-center justify-between gap-3"><h2 className="font-black text-slate-950">{title}</h2><ExportXlsxButton filename={filename} rows={rows} /></div><p className="text-sm text-slate-500">พร้อมส่งออก {rows.length.toLocaleString("th-TH")} แถว</p></div>;
+  return <div className="rounded-2xl bg-white p-4 shadow-sm"><div className="mb-3 flex items-center justify-between gap-3"><h2 className="font-black text-slate-950">{title}</h2><ExportCsvButton filename={filename} rows={rows} /></div><p className="text-sm text-slate-500">พร้อมส่งออก {rows.length.toLocaleString("th-TH")} แถว</p></div>;
 }
