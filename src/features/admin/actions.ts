@@ -130,22 +130,22 @@ const ADMIN_EXPORT_LIMIT = 1000;
 const adminExportDefinitions = {
   users: {
     label: "ผู้ใช้",
-    filename: "platform-users.xlsx",
+    filename: "platform-users.csv",
     description: "ข้อมูลบัญชี สิทธิ์ สถานะ และวันที่สร้าง",
   },
   workspaces: {
     label: "เวิร์กสเปซ",
-    filename: "platform-workspaces.xlsx",
+    filename: "platform-workspaces.csv",
     description: "การใช้งานเวิร์กสเปซและจำนวนข้อมูลหลัก",
   },
   payments: {
     label: "การชำระเงิน",
-    filename: "platform-payments.xlsx",
+    filename: "platform-payments.csv",
     description: "ธุรกรรมล่าสุดของแพลตฟอร์ม",
   },
   activity_logs: {
     label: "บันทึกกิจกรรม",
-    filename: "platform-activity-logs.xlsx",
+    filename: "platform-activity-logs.csv",
     description: "บันทึกกิจกรรมและความปลอดภัยล่าสุด",
   },
 } as const;

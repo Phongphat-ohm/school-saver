@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { errorResult, successResult } from "@/lib/result";
 import { addCalendarDays, endOfDay, startOfDay, toDateKey } from "@/lib/date";
 import { getCurrentWorkspaceOrThrow } from "@/lib/workspace";
+import { calculateCurrentMemberRound } from "@/lib/fine";
+import { memberRoundStatusLabels, roundStatusLabels } from "@/constants/statuses";
 
 function getDateRange(startDate: Date, endDate: Date) {
   const dates: string[] = [];
@@ -30,6 +32,98 @@ type ReportDashboardFilters = {
   startDate?: Date;
   endDate?: Date;
 };
+
+const outstandingStatuses = ["UNPAID", "PARTIAL", "OVERDUE", "PARTIAL_OVERDUE"] as const;
+const outstandingStatusFilters = ["ALL", ...outstandingStatuses] as const;
+const outstandingRoundScopes = ["OPEN", "ALL_ACTIVE"] as const;
+
+type OutstandingStatusFilter = (typeof outstandingStatusFilters)[number];
+type OutstandingRoundScope = (typeof outstandingRoundScopes)[number];
+
+type OutstandingReportFilters = {
+  q?: string;
+  roundId?: string;
+  status?: string;
+  roundScope?: string;
+};
+
+function getOutstandingStatusFilter(value?: string): OutstandingStatusFilter {
+  return outstandingStatusFilters.includes(value as OutstandingStatusFilter) ? (value as OutstandingStatusFilter) : "ALL";
+}
+
+function getOutstandingRoundScope(value?: string): OutstandingRoundScope {
+  return outstandingRoundScopes.includes(value as OutstandingRoundScope) ? (value as OutstandingRoundScope) : "OPEN";
+}
+
+async function getOutstandingReportRows(workspaceId: string, filters: OutstandingReportFilters = {}, take?: number) {
+  const q = filters.q?.trim();
+  const status = getOutstandingStatusFilter(filters.status);
+  const roundScope = getOutstandingRoundScope(filters.roundScope);
+  const today = new Date();
+  const rows = await prisma.memberRound.findMany({
+    where: {
+      workspaceId,
+      remainingAmount: { gt: 0 },
+      ...(filters.roundId ? { roundId: filters.roundId } : {}),
+      member: {
+        status: "ACTIVE",
+        ...(q
+          ? {
+              OR: [
+                { fullName: { contains: q, mode: "insensitive" as const } },
+                { memberCode: { contains: q, mode: "insensitive" as const } },
+                { studentNo: { contains: q, mode: "insensitive" as const } },
+                { classroom: { contains: q, mode: "insensitive" as const } },
+                { phone: { contains: q, mode: "insensitive" as const } },
+              ],
+            }
+          : {}),
+      },
+      round: { status: roundScope === "OPEN" ? "OPEN" : { not: "CANCELLED" } },
+    },
+    select: {
+      id: true,
+      targetAmount: true,
+      paidAmount: true,
+      remainingAmount: true,
+      fineAmount: true,
+      totalRequiredAmount: true,
+      status: true,
+      member: { select: { memberCode: true, studentNo: true, fullName: true, classroom: true, phone: true } },
+      round: {
+        select: {
+          id: true,
+          title: true,
+          dueDate: true,
+          status: true,
+          fineEnabled: true,
+          fineType: true,
+          fineAmount: true,
+          fineMaxAmount: true,
+        },
+      },
+    },
+    orderBy: [{ round: { createdAt: "desc" } }, { remainingAmount: "desc" }, { member: { studentNo: "asc" } }, { member: { memberCode: "asc" } }],
+    ...(take ? { take } : {}),
+  });
+
+  return rows
+    .map((row) => {
+      const current = calculateCurrentMemberRound(row, row.round, today);
+      return {
+        ...row,
+        current,
+        currentStatusLabel: memberRoundStatusLabels[current.currentStatus],
+        roundStatusLabel: roundStatusLabels[row.round.status],
+      };
+    })
+    .filter((row) => currentOutstandingFilter(row.current.currentStatus, status) && row.current.outstandingAmount > 0);
+}
+
+function currentOutstandingFilter(currentStatus: string, filter: OutstandingStatusFilter) {
+  if (filter === "ALL") return outstandingStatuses.includes(currentStatus as (typeof outstandingStatuses)[number]);
+  return currentStatus === filter;
+}
 
 export async function getReportDashboardAction(filters: ReportDashboardFilters = {}) {
   try {
@@ -178,6 +272,74 @@ export async function getReportDashboardAction(filters: ReportDashboardFilters =
     });
   } catch {
     return errorResult("ไม่สามารถดึงรายงานได้");
+  }
+}
+
+export async function createOutstandingMembersExportAction(filters: OutstandingReportFilters = {}) {
+  try {
+    const { workspaceId } = await getCurrentWorkspaceOrThrow();
+    const rows = await getOutstandingReportRows(workspaceId, filters);
+    return successResult(
+      {
+        filename: "school-saver-outstanding-members.csv",
+        rows: rows.map((row) => ({
+          รอบ: row.round.title,
+          "สถานะรอบ": row.roundStatusLabel,
+          "วันครบกำหนด": toDateKey(row.round.dueDate),
+          "รหัสสมาชิก": row.member.memberCode,
+          เลขที่: row.member.studentNo ?? "",
+          สมาชิก: row.member.fullName,
+          ห้อง: row.member.classroom ?? "",
+          เบอร์โทร: row.member.phone ?? "",
+          สถานะ: row.currentStatusLabel,
+          "ยอดที่ต้องจ่าย": row.current.totalRequiredAmount,
+          "จ่ายแล้ว": row.paidAmount,
+          ค่าปรับ: row.current.currentFine,
+          ยอดค้าง: row.current.outstandingAmount,
+        })),
+      },
+      "ส่งออกรายงานค้างชำระสำเร็จ",
+    );
+  } catch {
+    return errorResult("ไม่สามารถส่งออกรายงานค้างชำระได้");
+  }
+}
+
+export async function getOutstandingMembersReportAction(filters: OutstandingReportFilters = {}) {
+  try {
+    const { workspaceId } = await getCurrentWorkspaceOrThrow();
+    const rows = await getOutstandingReportRows(workspaceId, filters, 500);
+    const summary = rows.reduce(
+      (result, row) => {
+        result.totalOutstandingAmount += row.current.outstandingAmount;
+        result.totalRequiredAmount += row.current.totalRequiredAmount;
+        result.totalPaidAmount += row.paidAmount;
+        result.statusCounts[row.current.currentStatus] = (result.statusCounts[row.current.currentStatus] ?? 0) + 1;
+        return result;
+      },
+      { totalOutstandingAmount: 0, totalRequiredAmount: 0, totalPaidAmount: 0, statusCounts: {} as Record<string, number> },
+    );
+    const rounds = await prisma.collectionRound.findMany({
+      where: { workspaceId },
+      select: { id: true, title: true },
+      orderBy: { createdAt: "desc" },
+      take: 300,
+    });
+
+    return successResult({
+      rows: rows.slice(0, 25),
+      totalRows: rows.length,
+      summary,
+      filters: {
+        q: filters.q ?? "",
+        roundId: filters.roundId ?? "",
+        status: getOutstandingStatusFilter(filters.status),
+        roundScope: getOutstandingRoundScope(filters.roundScope),
+      },
+      filterOptions: { rounds },
+    });
+  } catch {
+    return errorResult("ไม่สามารถดึงรายงานค้างชำระได้");
   }
 }
 

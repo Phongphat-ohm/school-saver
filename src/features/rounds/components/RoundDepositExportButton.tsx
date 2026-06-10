@@ -1,9 +1,9 @@
 "use client";
 
 import { FileSpreadsheet } from "lucide-react";
-import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/Button";
 import { paymentMethodTypeLabels } from "@/constants/payment-methods";
+import { downloadRowsAsCsv } from "@/lib/csv";
 import { formatInputDate, formatThaiDate, toDateKey } from "@/lib/date";
 
 type RoundDepositExportButtonProps = {
@@ -44,7 +44,7 @@ type RoundDepositExportButtonProps = {
 };
 
 export function RoundDepositExportButton({ round, dayList, memberRounds }: RoundDepositExportButtonProps) {
-  function exportWorkbook() {
+  function exportCsv() {
     const dateKeys = dayList.map((day) => toDateKey(day));
     const dateLabels = dayList.map((day) => formatThaiDate(day));
     const rows = memberRounds.map((memberRound) => {
@@ -78,27 +78,13 @@ export function RoundDepositExportButton({ round, dayList, memberRounds }: Round
       return row;
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    worksheet["!cols"] = [
-      { wch: 10 },
-      { wch: 16 },
-      { wch: 28 },
-      ...dateLabels.flatMap(() => [{ wch: 14 }, { wch: 22 }]),
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 16 },
-      { wch: 12 },
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "ฝากเงินรายรอบ");
-    XLSX.writeFile(workbook, `school-saver-${sanitizeFilename(round.title)}-${formatInputDate(round.dueDate)}.xlsx`);
+    downloadRowsAsCsv(`school-saver-${sanitizeFilename(round.title)}-${formatInputDate(round.dueDate)}.csv`, rows);
   }
 
   return (
-    <Button type="button" variant="secondary" className="gap-2" onClick={exportWorkbook} disabled={!memberRounds.length}>
+    <Button type="button" variant="secondary" className="gap-2" onClick={exportCsv} disabled={!memberRounds.length}>
       <FileSpreadsheet size={18} />
-      Export Excel
+      Export CSV
     </Button>
   );
 }
